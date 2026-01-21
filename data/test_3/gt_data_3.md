@@ -1,61 +1,97 @@
-# [Ground Truth] Autonomous Knowledge Graph Exploration with Adaptive Breadth-Depth Retrieval
+# Ground Truth (Chain-of-Thought-test_data.pdf)
 
-## 1. 문서 메타데이터 (Document Metadata)
-* [cite_start]**제목**: Autonomous Knowledge Graph Exploration with Adaptive Breadth-Depth Retrieval [cite: 67]
-* [cite_start]**저자**: Joaquín Polonuer, Lucas Vittor, Iñaki Arango, Ayush Noori, David A. Clifton, Luciano Del Corro, Marinka Zitnik [cite: 68]
-* [cite_start]**소속**: Harvard Medical School, University of Oxford, Universidad de Buenos Aires 등 [cite: 69, 70]
-* [cite_start]**발행 정보**: arXiv:2601.13969v1 [cs.AI], 2026년 1월 20일 발행 [cite: 66]
-* [cite_start]**교신 저자**: delcorrol@udesa.edu.ar, marinka@hms.harvard.edu [cite: 73]
+arXiv:2201.11903v6 [cs.CL] 10 Jan 2023
 
-## 2. 초록 (Abstract)
-* [cite_start]**연구 배경**: 지식 그래프(KG) 검색에서 광범위한 탐색(Breadth)과 다단계 관계 추적(Depth) 사이의 균형을 맞추는 것이 핵심 과제임[cite: 75].
-* [cite_start]**제안 방법**: ARK(ADAPTIVE RETRIEVER OF KNOWLEDGE)라는 에이전틱 KG 리트리버를 도입함[cite: 77].
-* [cite_start]**주요 기능**: 전역 어휘 검색(Global Lexical Search)과 인접 노드 탐색(One-hop Neighborhood Exploration)의 두 가지 도구를 사용하여 탐색을 수행함[cite: 77].
-* [cite_start]**주요 성과**: STaRK 벤치마크에서 평균 Hit@1 59.1%, 평균 MRR 67.4를 달성하여 기존 방식 대비 Hit@1 기준 최대 31.4% 향상됨[cite: 80].
+## 1 Introduction
 
-## 3. 핵심 방법론 (Methodology)
+The NLP landscape has recently been revolutionized by language models (Peters et al., 2018; Devlin et al., 2019; Brown et al., 2020, inter alia).
 
-### 3.1 검색 도구 (Tools)
-* [cite_start]**Global Search (Search(q, k))**: 그래프 전체 노드 중 텍스트 속성 $d_V(u)$에 대해 BM25 유사도 $rel(q, d_V(u))$가 가장 높은 상위 $k$개 노드를 반환함[cite: 199, 201].
-* [cite_start]**Neighborhood Exploration (Neighbors(v, q, F))**: 특정 노드 $v$의 인접 노드 중 타입 필터 $F$를 만족하고 쿼리 $q$와 유사한 상위 $k$개 노드를 반환함[cite: 203, 210].
-* **수식 정의**:
-  $$N_F(v) := \{u \in N(v) | [cite_start]\phi_V(u) \in F_V, \phi_E(\{u, v\}) \in F_E\}$$ [cite: 206]
+Scaling up the size of language models has been shown to confer a range of benefits, such as improved performance and sample efficiency (Kaplan et al., 2020; Brown et al., 2020, inter alia).
 
-### 3.2 병렬 탐색 및 증류 (Parallel Exploration & Distillation)
-* [cite_start]**병렬화**: $n$개의 독립적인 에이전트를 동시에 실행하고 투표 수(Vote count) 기반의 순위 융합 규칙을 적용하여 견고성을 높임[cite: 213, 218].
-* [cite_start]**모델 증류**: 교사 모델(GPT-4.1)의 도구 사용 궤적을 8B 모델(Qwen3-8B)에 모방 학습(Imitation Learning)시켜 성능 손실을 최소화하며 비용을 절감함[cite: 221, 229, 255].
+However, scaling up model size alone has not proved sufficient for achieving high performance on challenging tasks such as arithmetic, commonsense, and symbolic reasoning (Rae et al., 2021).
 
-## 4. 실험 결과 (Experimental Results)
+This work explores how the reasoning ability of large language models can be unlocked by a simple method motivated by two ideas.
 
-### 4.1 데이터셋 통계 (Table 4)
-| Dataset | Entity types | Relation types | Entities | Relations | Tokens |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **AMAZON** | 4 | 5 | 1,035,542 | 9,443,802 | 592,067,882 |
-| **MAG** | 4 | 4 | 1,872,968 | 39,802,116 | 212,602,571 |
-| **PRIME** | 10 | 18 | 129,375 | 8,100,498 | 31,844,769 |
-[cite_start][cite: 743]
+First, techniques for arithmetic reasoning can benefit from generating natural language rationales that lead to the final answer.
 
-### 4.2 STaRK 테스트 셋 성능 비교 (Table 1 - 요약)
-| Category | Method | AMAZON (Hit@1) | MAG (Hit@1) | PRIME (Hit@1) | Avg (Hit@1) |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| **Retrieval-based** | BM25 | 44.94 | 25.85 | 12.75 | 27.85 |
-| **Training-free** | KAR | 54.20 | 50.47 | 30.35 | 45.01 |
-| **Agent-based** | Think-on-Graph | 20.67 | 23.33 | 16.67 | 20.22 |
-| **Proposed** | **ARK (GPT-4.1)** | **55.82** | **73.40** | **48.20** | **59.14** |
-| **Distilled** | ARK distilled (8B) | 54.99 | 61.66 | 31.87 | 49.51 |
-[cite_start][cite: 257]
+Prior work has given models the ability to generate natural language intermediate steps by training from scratch (Ling et al., 2017) or finetuning a pretrained model (Cobbe et al., 2021), in addition to neuro-symbolic methods that use formal languages instead of natural language (Roy and Roth, 2015; Chiang and Chen, 2019; Amini et al., 2019; Chen et al., 2019).
 
-### 4.3 도구 세트 설계의 영향 (Table 2)
-* [cite_start]**Full (전체 기능)**: MAG 기준 Hit@1 79.2 [cite: 310]
-* [cite_start]**w/o Neighbors (이웃 탐색 제거)**: MAG 기준 Hit@1 30.5 (가장 큰 하락폭) [cite: 310]
-* [cite_start]**Neighbors w/o q (쿼리 순위화 제거)**: MAG 기준 Hit@1 72.1 [cite: 310]
+Second, large language models offer the exciting prospect of in-context few-shot learning via prompting.
 
-## 5. 지식 그래프 탐색 에이전트 시스템 프롬프트 (Appendix A.3)
-에이전트는 다음과 같은 툴을 사용하여 탐색을 수행함:
-1. [cite_start]**search_in_graph**: 초기 광범위 검색용[cite: 766].
-2. [cite_start]**search_in_neighborhood**: 1-hop 인접 노드 탐색 및 관계 확인용[cite: 772].
-3. [cite_start]**add_to_answer**: 관련 노드를 근거와 함께 정답 리스트에 추가[cite: 779].
-4. [cite_start]**finish**: 탐색 완료 선언[cite: 784].
+That is, instead of finetuning a separate language model checkpoint for each new task, one can simply "prompt" the model with a few input-output exemplars demonstrating the task.
 
----
-**출처**: Polonuer et al., "Autonomous Knowledge Graph Exploration with Adaptive Breadth-Depth Retrieval", arXiv:2601.13969v1, 2026.
+Remarkably, this has been successful for a range of simple question-answering tasks (Brown et al., 2020).
+
+Both of the above ideas, however, have key limitations.
+
+For rationale-augmented training and finetuning methods, it is costly to create a large set of high quality rationales, which is much more complicated than simple input-output pairs used in normal machine learning.
+
+For the traditional few-shot prompting method used in Brown et al. (2020), it works poorly on tasks that require reasoning abilities, and often does not improve substantially with increasing language model scale (Rae et al., 2021).
+
+In this paper, we combine the strengths of these two ideas in a way that avoids their limitations.
+
+Specifically, we explore the ability of language models to perform few-shot prompting for reasoning tasks, given a prompt that consists of triples: (input, chain of thought, output).
+
+A chain of thought is a series of intermediate natural language reasoning steps that lead to the final output, and we refer to this approach as chain-of-thought prompting.
+
+An example prompt is shown in Figure 1.
+
+We present empirical evaluations on arithmetic, commonsense, and symbolic reasoning benchmarks, showing that chain-of-thought prompting outperforms standard prompting, sometimes to a striking degree.
+
+Figure 2 illustrates one such result on the GSM8K benchmark of math word problems (Cobbe et al., 2021), chain-of-thought prompting with PaLM 540B outperforms standard prompting by a large margin and achieves new state-of-the-art performance.
+
+A prompting only approach is important because it does not require a large training dataset and because a single model checkpoint can perform many tasks without loss of generality.
+
+This work underscores how large language models can learn via a few examples with natural language data about the task (c.f. automatically learning the patterns underlying inputs and outputs via a large training dataset).
+
+## 2 Chain-of-Thought Prompting
+
+Consider one's own thought process when solving a complicated reasoning task such as a multi-step math word problem.
+
+It is typical to decompose the problem into intermediate steps and solve each before giving the final answer: "After Jane gives 2 flowers to her mom she has 10... then after she gives 3 to her dad she will have 7... so the answer is 7."
+
+The goal of this paper is to endow language models with the ability to generate a similar chain of thought a coherent series of intermediate reasoning steps that lead to the final answer for a problem.
+
+We will show that sufficiently large language models can generate chains of thought if demonstrations of chain-of-thought reasoning are provided in the exemplars for few-shot prompting.
+
+Figure 1 shows an example of a model producing a chain of thought to solve a math word problem that it would have otherwise gotten incorrect.
+
+The chain of thought in this case resembles a solution and can interpreted as one, but we still opt to call it a chain of thought to better capture the idea that it mimics a step-by-step thought process for arriving at the answer (and also, solutions/explanations typically come after the final answer (Narang et al., 2020; Wiegreffe et al., 2022; Lampinen et al., 2022, inter alia)).
+
+Chain-of-thought prompting has several attractive properties as an approach for facilitating reasoning in language models.
+
+- First, chain of thought, in principle, allows models to decompose multi-step problems into intermediate steps, which means that additional computation can be allocated to problems that require more reasoning steps.
+
+- Second, a chain of thought provides an interpretable window into the behavior of the model, suggesting how it might have arrived at a particular answer and providing opportunities to debug where the reasoning path went wrong (although fully characterizing a model's computations that support an answer remains an open question).
+
+- Third, chain-of-thought reasoning can be used for tasks such as math word problems, commonsense reasoning, and symbolic manipulation, and is potentially applicable (at least in principle) to any task that humans can solve via language.
+
+- Finally, chain-of-thought reasoning can be readily elicited in sufficiently large off-the-shelf language models simply by including examples of chain of thought sequences into the exemplars of few-shot prompting.
+
+In empirical experiments, we will observe the utility of chain-of-thought prompting for arithmetic reasoning (Section 3), commonsense reasoning (Section 4), and symbolic reasoning (Section 5).
+
+## 3 Arithmetic Reasoning
+
+We begin by considering math word problems of the form in Figure 1, which measure the arithmetic reasoning ability of language models.
+
+Though simple for humans, arithmetic reasoning is a task where language models often struggle (Hendrycks et al., 2021; Patel et al., 2021, inter alia).
+
+Strikingly, chain-of-thought prompting when used with the 540B parameter language model performs comparably with task-specific finetuned models on several tasks, even achieving new state of the art on the challenging GSM8K benchmark (Cobbe et al., 2021).
+
+### 3.1 Experimental Setup
+
+We explore chain-of-thought prompting for various language models on multiple benchmarks.
+
+**Benchmarks.** We consider the following five math word problem benchmarks: (1) the GSM8K benchmark of math word problems (Cobbe et al., 2021), (2) the SVAMP dataset of math word problems with varying structures (Patel et al., 2021), (3) the ASDiv dataset of diverse math word problems (Miao et al., 2020), (4) the AQUA dataset of algebraic word problems, and (5) the MAWPS benchmark (Koncel-Kedziorski et al., 2016). Example problems are given in Appendix Table 12.
+
+**Standard prompting.** For the baseline, we consider standard few-shot prompting, popularized by Brown et al. (2020), in which a language model is given in-context exemplars of input-output pairs before outputting a prediction for a test-time example. Exemplars are formatted as questions and answers. The model gives the answer directly, as shown in Figure 1 (left).
+
+**Chain-of-thought prompting.** Our proposed approach is to augment each exemplar in few-shot prompting with a chain of thought for an associated answer, as illustrated in Figure 1 (right). As most of the datasets only have an evaluation split, we manually composed a set of eight few-shot exemplars with chains of thought for prompting–Figure 1 (right) shows one chain of thought exemplar, and the full set of exemplars is given in Appendix Table 20. (These particular exemplars did not undergo prompt engineering; robustness is studied in Section 3.4 and Appendix A.2.) To investigate whether chain-of-thought prompting in this form can successfully elicit successful reasoning across a range of math word problems, we used this single set of eight chain of thought exemplars for all benchmarks except AQUA, which is multiple choice instead of free response. For AQUA, we used four exemplars and solutions from the training set, as given in Appendix Table 21.
+
+**Language models.** We evaluate five large language models. The first is GPT-3 (Brown et al., 2020), for which we use text-ada-001, text-babbage-001, text-curie-001, and text-davinci-002, which presumably correspond to InstructGPT models of 350M, 1.3B, 6.7B, and 175B parameters (Ouyang et al., 2022). The second is LaMDA (Thoppilan et al., 2022), which has models of 422M, 2B, 8B, 68B, and 137B parameters. The third is PaLM, which has models of 8B, 62B, and 540B parameters. The fourth is UL2 20B (Tay et al., 2022), and the fifth is Codex (Chen et al., 2021, code-davinci-002 in the OpenAI API). We sample from the models via greedy decoding (though follow-up work shows chain-of-thought prompting can be improved by taking the majority final answer over many sampled generations (Wang et al., 2022a)). For LaMDA, we report averaged results over five random seeds, where each seed had a different randomly shuffled order of exemplars. As LaMDA experiments did not show large variance among different seeds, to save compute we report results for a single exemplar order for all other models.
+
+### 3.2 Results
+
+The strongest results of chain-of-thought prompting are summarized in Figure 4, with all experimental outputs for each model collection, model size, and benchmark shown in Table 2 in the Appendix. There are three key takeaways.
+
+First, Figure 4 shows that chain-of-thought prompting is an emergent ability of model scale (Wei et al., 2022b). That is, chain-of-thought prompting does not positively impact performance for small models, and only yields performance gains when used with models of ~100B parameters. We qualitatively found that models of smaller scale produced fluent but illogical chains of thought, leading to lower performance than standard prompting.

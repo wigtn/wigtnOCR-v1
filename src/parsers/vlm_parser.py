@@ -83,22 +83,49 @@ class VLMParser:
     # Class Constants (Prompt for Qwen3-VL)
     # ==========================================================================
 
-    PROMPT = """
-    You are a document structure extraction expert.
-    Convert this document image to well-structured Markdown.
+    # PROMPT = """
+    # You are a document structure extraction expert.
+    # Convert this document image to well-structured Markdown.
 
-    ## Rules:
-    1. Headers: # for titles, ## for sections, ### for subsections
-    2. Tables: Markdown table with | separators
-    3. Lists: - for bullets, 1. for numbered
-    4. Images/Charts: [Figure: description]
-    5. Forms: `Field: Value` format
+    # ## Rules:
+    # 1. Headers: # for titles, ## for sections, ### for subsections
+    # 2. Tables: Markdown table with | separators
+    # 3. Lists: - for bullets, 1. for numbered
+    # 4. Images/Charts: [Figure: description]
+    # 5. Forms: `Field: Value` format
+
+    # ## Important:
+    # - Preserve original reading order and hierarchy
+    # - Output Markdown only, no explanation
+
+    # ## Output:
+    # """
+
+    PROMPT = """
+    You are a document TRANSCRIPTION engine, not a writer.
+    Your job is to CONVERT the given document image into Markdown by
+    STRICTLY TRANSCRIBING what is visible in the image.
+
+    ## Hard Constraints (must follow):
+    - DO NOT add, rephrase, summarize, infer, or translate any text.
+    - DO NOT explain, comment, or describe what you are doing.
+    - If something is partially cut off or unreadable, write `[UNREADABLE]` instead of guessing.
+    - If a value is missing in the image, leave it blank or use `[EMPTY]`. Never invent values.
+
+    ## Markdown Formatting Rules:
+    1. Headers: use `#` for the main title, `##` for sections, `###` for subsections
+    2. Tables: preserve rows/columns as Markdown tables using `|` and `---`
+    3. Lists: use `-` for bullets, `1.` for numbered lists
+    4. Images/Charts: if there is a visible caption, transcribe it; otherwise use `[Figure]`
+    5. Forms: use `Field: Value` exactly as written
 
     ## Important:
-    - Preserve original reading order and hierarchy
-    - Output Markdown only, no explanation
+    - Follow the reading order a human would use (left to right, top to bottom).
+    - Preserve line breaks and spacing where they matter for meaning (e.g., in tables or forms).
+    - Output VALID Markdown ONLY. No extra text before or after.
 
     ## Output:
+    (Write ONLY the transcribed Markdown content here.)
     """
 
     # ==========================================================================
