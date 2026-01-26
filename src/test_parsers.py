@@ -2,21 +2,173 @@
 """
 CLI 기반 Parser 테스트 스크립트
 
-3개의 Parser를 비교 테스트합니다:
-1. VLM Parser (Qwen3-VL-2B-Instruct)
-2. OCR Parser - Text (pdfplumber)
-3. OCR Parser - Image (Docling + RapidOCR)
+다양한 입력 포맷을 지원하는 Parser 비교 테스트:
+1. VLM Parser (Qwen3-VL-2B-Instruct) - 모든 포맷 지원
+2. OCR Parser - Text (pdfplumber) - PDF 전용
+3. OCR Parser - Image (Docling + RapidOCR) - PDF 전용
+
+지원 포맷:
+- PDF: 디지털/스캔 PDF (모든 파서 테스트)
+- IMAGE: PNG, JPG, JPEG (VLM만 지원)
+- HWP/HWPX: 한글 문서 (이미지로 변환 후 VLM 파싱)
 
 Usage:
-    python -m src.test_parsers --pdf data/sample_data.pdf --gt data/ground_truth.md
-    python -m src.test_parsers --pdf data/sample_data.pdf  # GT 없이 파싱만
+    # PDF 테스트
+    python -m src.test_parsers --input data/sample.pdf --gt data/ground_truth.md
+
+    # 이미지 테스트 (VLM만)
+    python -m src.test_parsers --input data/image.png --gt data/ground_truth.md
+
+    # HWP/HWPX 테스트 (VLM만, LibreOffice 필요)
+    python -m src.test_parsers --input data/document.hwp --gt data/ground_truth.md
+
+    # 레거시 (--pdf 옵션도 지원)
+    python -m src.test_parsers --pdf data/sample.pdf
 """
 
 import argparse
+import subprocess
 import sys
 import time
 import re
+import tempfile
 from pathlib import Path
+from enum import Enum
+from typing import Optional, List
+
+import jiwer
+
+# =============================================================================
+# Import Compatibility Layer
+# =============================================================================
+# 두 가지 실행 방식 모두 지원:
+#   1. python -m src.test_parsers (프로젝트 루트에서)
+#   2. python test_parsers.py (src/ 디렉토리에서)
+
+def _import_parsers():
+    """파서 모듈을 동적으로 임포트 (경로 호환성 처리)"""
+    global VLMParser, OCRParser, ImageOCRParser, DoclingParser, check_docling_available
+
+    try:
+        # 방법 1: src.parsers (프로젝트 루트에서 실행)
+        from src.parsers.vlm_parser import VLMParser
+        from src.parsers.ocr_parser import OCRParser, ImageOCRParser
+        from src.parsers.docling_parser import DoclingParser, check_docling_available
+    except ImportError:
+        try:
+            # 방법 2: parsers (src/ 디렉토리에서 실행 또는 PYTHONPATH 설정)
+            from parsers.vlm_parser import VLMParser
+            from parsers.ocr_parser import OCRParser, ImageOCRParser
+            from parsers.docling_parser import DoclingParser, check_docling_available
+        except ImportError as e:
+            print(f"❌ 파서 모듈을 찾을 수 없습니다: {e}")
+            print("   프로젝트 루트에서 실행하세요: python -m src.test_parsers")
+            sys.exit(1)
+
+    return VLMParser, OCRParser, ImageOCRParser, DoclingParser, check_docling_available
+
+# 지연 임포트를 위한 플레이스홀더
+VLMParser = None
+OCRParser = None
+ImageOCRParser = None
+DoclingParser = None
+check_docling_available = None
+
+
+# =============================================================================
+# File Format Detection
+# =============================================================================
+
+class FileFormat(Enum):
+    """지원하는 파일 포맷"""
+    PDF = "pdf"
+    IMAGE = "image"  # PNG, JPG, JPEG
+    HWP = "hwp"      # 한글 97-2003
+    HWPX = "hwpx"    # 한글 2010+
+    UNKNOWN = "unknown"
+
+
+def detect_file_format(file_path: Path) -> FileFormat:
+    """파일 확장자로 포맷 감지"""
+    suffix = file_path.suffix.lower()
+
+    if suffix == ".pdf":
+        return FileFormat.PDF
+    elif suffix in [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff"]:
+        return FileFormat.IMAGE
+    elif suffix == ".hwp":
+        return FileFormat.HWP
+    elif suffix == ".hwpx":
+        return FileFormat.HWPX
+    else:
+        return FileFormat.UNKNOWN
+
+
+def convert_hwp_to_images(hwp_path: Path, dpi: int = 150) -> List[bytes]:
+    """HWP/HWPX 파일을 이미지로 변환 (LibreOffice 사용)
+
+    Args:
+        hwp_path: HWP/HWPX 파일 경로
+        dpi: 출력 해상도
+
+    Returns:
+        PNG 이미지 바이트 리스트
+
+    Requirements:
+        - LibreOffice 설치 필요 (soffice 명령)
+        - Ubuntu: sudo apt install libreoffice
+    """
+    images = []
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+
+            # Step 1: HWP → PDF 변환 (LibreOffice)
+            print("   HWP → PDF 변환 중 (LibreOffice)...", end=" ", flush=True)
+            result = subprocess.run([
+                "soffice",
+                "--headless",
+                "--convert-to", "pdf",
+                "--outdir", str(tmpdir_path),
+                str(hwp_path)
+            ], capture_output=True, timeout=60)
+
+            if result.returncode != 0:
+                print("✗")
+                print(f"   LibreOffice 오류: {result.stderr.decode()}")
+                return []
+
+            print("✓")
+
+            # Step 2: 변환된 PDF 찾기
+            pdf_files = list(tmpdir_path.glob("*.pdf"))
+            if not pdf_files:
+                print("   ❌ PDF 파일 생성 실패")
+                return []
+
+            pdf_path = pdf_files[0]
+            pdf_bytes = pdf_path.read_bytes()
+
+            # Step 3: PDF → 이미지 변환
+            global ImageOCRParser
+            if ImageOCRParser is None:
+                _import_parsers()
+            image_parser = ImageOCRParser()
+            images = image_parser.pdf_to_images(pdf_bytes, dpi=dpi)
+
+            print(f"   PDF → {len(images)} 페이지 이미지 변환 완료")
+
+    except FileNotFoundError:
+        print("\n   ❌ LibreOffice가 설치되지 않았습니다.")
+        print("   Ubuntu: sudo apt install libreoffice")
+        print("   macOS: brew install --cask libreoffice")
+    except subprocess.TimeoutExpired:
+        print("\n   ❌ 변환 타임아웃 (60초 초과)")
+    except Exception as e:
+        print(f"\n   ❌ HWP 변환 오류: {e}")
+
+    return images
 
 
 # =============================================================================
@@ -114,8 +266,6 @@ def get_tokenizer(tokenizer_type: str = "whitespace"):
 # CER/WER Calculation (using jiwer library)
 # =============================================================================
 
-import jiwer
-
 
 def calculate_cer(hypothesis: str, reference: str) -> dict:
     """Character Error Rate 계산 (jiwer 사용)
@@ -160,8 +310,11 @@ def calculate_wer(hypothesis: str, reference: str, tokenizer=None) -> dict:
     Returns:
         dict with wer, substitutions, deletions, insertions
     """
+    def default_tokenizer(x: str) -> list[str]:
+        return x.split()
+
     if tokenizer is None:
-        tokenizer = lambda x: x.split()
+        tokenizer = default_tokenizer
 
     if not reference:
         return {"wer": 0.0 if not hypothesis else float('inf')}
@@ -205,10 +358,23 @@ def calculate_wer(hypothesis: str, reference: str, tokenizer=None) -> dict:
 # Parser Tests
 # =============================================================================
 
-def test_vlm_parser(pdf_bytes: bytes, verbose: bool = False) -> dict:
-    """VLM Parser 테스트"""
-    from parsers.vlm_parser import VLMParser
-    from parsers.ocr_parser import ImageOCRParser
+def test_vlm_parser(
+    input_data: bytes,
+    verbose: bool = False,
+    file_format: FileFormat = FileFormat.PDF,
+    pre_converted_images: Optional[List[bytes]] = None
+) -> dict:
+    """VLM Parser 테스트 (다양한 입력 포맷 지원)
+
+    Args:
+        input_data: 파일 바이트 데이터
+        verbose: 상세 출력 여부
+        file_format: 파일 포맷
+        pre_converted_images: 미리 변환된 이미지 리스트 (HWP용)
+    """
+    global VLMParser, ImageOCRParser
+    if VLMParser is None:
+        _import_parsers()
 
     print("\n" + "=" * 60)
     print("🤖 VLM Parser (Qwen3-VL-2B-Instruct)")
@@ -216,15 +382,31 @@ def test_vlm_parser(pdf_bytes: bytes, verbose: bool = False) -> dict:
 
     start_time = time.time()
 
-    # PDF → 이미지 변환
-    image_parser = ImageOCRParser()
-    images = image_parser.pdf_to_images(pdf_bytes, dpi=150)
+    # 입력 포맷에 따른 이미지 준비
+    if pre_converted_images:
+        # HWP/HWPX: 미리 변환된 이미지 사용
+        images = pre_converted_images
+        print(f"📄 입력: 미리 변환된 이미지 ({len(images)} 페이지)")
 
-    if not images:
-        print("❌ PDF → 이미지 변환 실패")
-        return {"success": False, "error": "이미지 변환 실패"}
+    elif file_format == FileFormat.IMAGE:
+        # 이미지 파일: 바로 사용
+        images = [input_data]
+        print("📄 입력: 단일 이미지 파일")
 
-    print(f"📄 페이지 수: {len(images)}")
+    elif file_format == FileFormat.PDF:
+        # PDF → 이미지 변환
+        image_parser = ImageOCRParser()
+        images = image_parser.pdf_to_images(input_data, dpi=150)
+
+        if not images:
+            print("❌ PDF → 이미지 변환 실패")
+            return {"success": False, "error": "이미지 변환 실패"}
+
+        print(f"📄 페이지 수: {len(images)}")
+
+    else:
+        print(f"❌ 지원하지 않는 포맷: {file_format}")
+        return {"success": False, "error": f"Unsupported format: {file_format}"}
 
     # VLM 파싱
     vlm_parser = VLMParser()
@@ -249,14 +431,14 @@ def test_vlm_parser(pdf_bytes: bytes, verbose: bool = False) -> dict:
 
     success_count = sum(1 for r in results if r.success)
 
-    print(f"\n📊 결과:")
+    print("\n📊 결과:")
     print(f"   - 성공: {success_count}/{len(results)} 페이지")
     print(f"   - 총 시간: {total_time:.2f}s")
     print(f"   - 평균: {total_time/len(images):.2f}s/page")
     print(f"   - 추출 길이: {len(combined_content)} chars")
 
     if verbose and combined_content:
-        print(f"\n📝 추출 결과 (처음 500자):")
+        print("\n📝 추출 결과 (처음 500자):")
         print("-" * 40)
         print(combined_content[:500])
         print("-" * 40)
@@ -272,7 +454,9 @@ def test_vlm_parser(pdf_bytes: bytes, verbose: bool = False) -> dict:
 
 def test_ocr_text_parser(pdf_bytes: bytes, verbose: bool = False) -> dict:
     """OCR Parser (Text - pdfplumber) 테스트"""
-    from parsers.ocr_parser import OCRParser
+    global OCRParser
+    if OCRParser is None:
+        _import_parsers()
 
     print("\n" + "=" * 60)
     print("📖 OCR Parser - Text (pdfplumber)")
@@ -287,7 +471,7 @@ def test_ocr_text_parser(pdf_bytes: bytes, verbose: bool = False) -> dict:
     # 파싱
     result = parser.parse_pdf(pdf_bytes)
 
-    print(f"\n📊 결과:")
+    print("\n📊 결과:")
     print(f"   - 성공: {'✓' if result.success else '✗'}")
     print(f"   - 페이지 수: {result.page_count}")
     print(f"   - 텍스트 존재: {'✓' if result.has_text else '✗'}")
@@ -296,7 +480,7 @@ def test_ocr_text_parser(pdf_bytes: bytes, verbose: bool = False) -> dict:
     print(f"   - 추출 길이: {len(result.content)} chars")
 
     if verbose and result.content:
-        print(f"\n📝 추출 결과 (처음 500자):")
+        print("\n📝 추출 결과 (처음 500자):")
         print("-" * 40)
         print(result.content[:500])
         print("-" * 40)
@@ -313,7 +497,9 @@ def test_ocr_text_parser(pdf_bytes: bytes, verbose: bool = False) -> dict:
 
 def test_ocr_image_parser(pdf_bytes: bytes, verbose: bool = False) -> dict:
     """OCR Parser (Image - Docling) 테스트"""
-    from parsers.docling_parser import DoclingParser, check_docling_available
+    global DoclingParser, check_docling_available
+    if DoclingParser is None:
+        _import_parsers()
 
     print("\n" + "=" * 60)
     print("🔍 OCR Parser - Image (Docling + RapidOCR)")
@@ -327,7 +513,7 @@ def test_ocr_image_parser(pdf_bytes: bytes, verbose: bool = False) -> dict:
     parser = DoclingParser(ocr_enabled=True)
     result = parser.parse_pdf(pdf_bytes)
 
-    print(f"\n📊 결과:")
+    print("\n📊 결과:")
     print(f"   - 성공: {'✓' if result.success else '✗'}")
     print(f"   - 페이지 수: {result.page_count}")
     print(f"   - 총 시간: {result.elapsed_time:.2f}s")
@@ -338,7 +524,7 @@ def test_ocr_image_parser(pdf_bytes: bytes, verbose: bool = False) -> dict:
         print(f"   - 에러: {result.error}")
 
     if verbose and result.content:
-        print(f"\n📝 추출 결과 (처음 500자):")
+        print("\n📝 추출 결과 (처음 500자):")
         print("-" * 40)
         print(result.content[:500])
         print("-" * 40)
@@ -367,7 +553,7 @@ def evaluate_results(results: dict, ground_truth: str, tokenizer=None, tokenizer
         tokenizer_name: 토크나이저 이름 (출력용)
     """
     print("\n" + "=" * 60)
-    print(f"📊 평가 결과 (Ground Truth 비교) - jiwer")
+    print("📊 평가 결과 (Ground Truth 비교) - jiwer")
     print(f"   WER Tokenizer: {tokenizer_name}")
     print("=" * 60)
 
@@ -430,7 +616,7 @@ def save_results_to_files(results: dict, output_dir: str, pdf_name: str, evaluat
     output_path.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base_name = Path(pdf_name).stem
+    _ = Path(pdf_name).stem  # base_name reserved for future use
 
     print("\n" + "=" * 60)
     print(f"💾 결과 저장: {output_path}")
@@ -477,20 +663,20 @@ def save_results_to_files(results: dict, output_dir: str, pdf_name: str, evaluat
 
     meta_path = output_path / "evaluation.json"
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"   ✓ evaluation.json")
+    print("   ✓ evaluation.json")
 
     # 3. 요약 마크다운 저장
     summary_lines = [
-        f"# Parsing Test Results",
-        f"",
+        "# Parsing Test Results",
+        "",
         f"- **Date**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         f"- **PDF**: {pdf_name}",
         f"- **Tokenizer**: {tokenizer_name}",
-        f"",
-        f"## Results",
-        f"",
-        f"| Parser | Success | Latency | Length |",
-        f"|--------|---------|---------|--------|",
+        "",
+        "## Results",
+        "",
+        "| Parser | Success | Latency | Length |",
+        "|--------|---------|---------|--------|",
     ]
 
     for name, result in results.items():
@@ -501,11 +687,11 @@ def save_results_to_files(results: dict, output_dir: str, pdf_name: str, evaluat
 
     if evaluation:
         summary_lines.extend([
-            f"",
-            f"## Evaluation (vs Ground Truth)",
-            f"",
-            f"| Parser | CER | WER |",
-            f"|--------|-----|-----|",
+            "",
+            "## Evaluation (vs Ground Truth)",
+            "",
+            "| Parser | CER | WER |",
+            "|--------|-----|-----|",
         ])
         for name, eval_data in evaluation.items():
             cer = eval_data.get("cer")
@@ -516,7 +702,7 @@ def save_results_to_files(results: dict, output_dir: str, pdf_name: str, evaluat
 
     summary_path = output_path / "README.md"
     summary_path.write_text("\n".join(summary_lines), encoding="utf-8")
-    print(f"   ✓ README.md (요약)")
+    print("   ✓ README.md (요약)")
 
     return saved_files
 
@@ -557,13 +743,32 @@ def print_summary(results: dict, evaluation: dict = None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="3개 Parser 비교 테스트 (VLM, OCR-Text, OCR-Image)"
+        description="다중 포맷 Parser 비교 테스트 (VLM, OCR-Text, OCR-Image)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+지원 포맷:
+  PDF       : 디지털/스캔 PDF (모든 파서 테스트)
+  IMAGE     : PNG, JPG, JPEG, WebP, GIF, BMP, TIFF (VLM만)
+  HWP/HWPX  : 한글 문서 (LibreOffice로 변환 후 VLM)
+
+예시:
+  python -m src.test_parsers --input data/test.pdf --gt data/gt.md
+  python -m src.test_parsers --input data/receipt.png --gt data/gt.md
+  python -m src.test_parsers --input data/document.hwp --gt data/gt.md
+        """
     )
-    parser.add_argument(
+
+    # 입력 파일 (--input 또는 레거시 --pdf)
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument(
+        "--input", "-i",
+        help="테스트할 입력 파일 (PDF, 이미지, HWP/HWPX)"
+    )
+    input_group.add_argument(
         "--pdf", "-p",
-        required=True,
-        help="테스트할 PDF 파일 경로"
+        help="테스트할 PDF 파일 경로 (레거시 옵션, --input 사용 권장)"
     )
+
     parser.add_argument(
         "--gt", "-g",
         help="Ground Truth 파일 경로 (선택)"
@@ -598,6 +803,12 @@ def main():
         default="whitespace",
         help="WER 계산용 토크나이저 (기본: whitespace, 한국어: mecab 또는 okt)"
     )
+    parser.add_argument(
+        "--dpi",
+        type=int,
+        default=150,
+        help="PDF/HWP → 이미지 변환 해상도 (기본: 150)"
+    )
 
     args = parser.parse_args()
 
@@ -607,19 +818,29 @@ def main():
         date_str = datetime.now().strftime("%Y%m%d")
         args.output_dir = f"docs/Parsing_test_{date_str}"
 
-    # PDF 파일 읽기
-    pdf_path = Path(args.pdf)
-    if not pdf_path.exists():
-        print(f"❌ PDF 파일을 찾을 수 없습니다: {pdf_path}")
+    # 입력 파일 경로 결정 (--input 우선, --pdf는 레거시)
+    input_path = Path(args.input if args.input else args.pdf)
+    if not input_path.exists():
+        print(f"❌ 파일을 찾을 수 없습니다: {input_path}")
         sys.exit(1)
+
+    # 파일 포맷 감지
+    file_format = detect_file_format(input_path)
 
     print("=" * 60)
     print("🔬 VLM Document Parsing Quality Test")
     print("=" * 60)
-    print(f"📄 PDF: {pdf_path}")
+    print(f"📄 입력 파일: {input_path}")
+    print(f"📁 포맷: {file_format.value.upper()}")
 
-    pdf_bytes = pdf_path.read_bytes()
-    print(f"📦 크기: {len(pdf_bytes) / 1024:.1f} KB")
+    input_bytes = input_path.read_bytes()
+    print(f"📦 크기: {len(input_bytes) / 1024:.1f} KB")
+
+    # 지원하지 않는 포맷 체크
+    if file_format == FileFormat.UNKNOWN:
+        print("❌ 지원하지 않는 파일 포맷입니다.")
+        print("   지원 포맷: PDF, PNG, JPG, JPEG, HWP, HWPX")
+        sys.exit(1)
 
     # Ground Truth 읽기 (선택)
     ground_truth = None
@@ -633,28 +854,80 @@ def main():
 
     results = {}
 
-    # 1. VLM Parser
-    if not args.skip_vlm:
+    # HWP/HWPX 전처리 (이미지로 변환)
+    hwp_images = None
+    if file_format in [FileFormat.HWP, FileFormat.HWPX]:
+        print("\n📄 HWP/HWPX 변환 시작...")
+        hwp_images = convert_hwp_to_images(input_path, dpi=args.dpi)
+
+        if not hwp_images:
+            print("❌ HWP → 이미지 변환 실패. LibreOffice 설치를 확인하세요.")
+            sys.exit(1)
+
+    # ==========================================================================
+    # 포맷별 테스트 분기
+    # ==========================================================================
+
+    if file_format == FileFormat.PDF:
+        # PDF: 모든 파서 테스트
+
+        # 1. VLM Parser
+        if not args.skip_vlm:
+            try:
+                results["VLM"] = test_vlm_parser(
+                    input_bytes, args.verbose, FileFormat.PDF
+                )
+            except Exception as e:
+                print(f"❌ VLM Parser 오류: {e}")
+                results["VLM"] = {"success": False, "error": str(e)}
+
+        # 2. OCR Parser (Text)
         try:
-            results["VLM"] = test_vlm_parser(pdf_bytes, args.verbose)
+            results["OCR-Text"] = test_ocr_text_parser(input_bytes, args.verbose)
+        except Exception as e:
+            print(f"❌ OCR-Text Parser 오류: {e}")
+            results["OCR-Text"] = {"success": False, "error": str(e)}
+
+        # 3. OCR Parser (Image - Docling)
+        if not args.skip_docling:
+            try:
+                results["OCR-Image"] = test_ocr_image_parser(input_bytes, args.verbose)
+            except Exception as e:
+                print(f"❌ OCR-Image Parser 오류: {e}")
+                results["OCR-Image"] = {"success": False, "error": str(e)}
+
+    elif file_format == FileFormat.IMAGE:
+        # 이미지: VLM만 테스트
+        print("\n⚠️ 이미지 입력: VLM Parser만 테스트합니다 (OCR 파서는 PDF 전용)")
+
+        if args.skip_vlm:
+            print("❌ --skip-vlm 옵션이 설정되어 테스트할 파서가 없습니다.")
+            sys.exit(1)
+
+        try:
+            results["VLM"] = test_vlm_parser(
+                input_bytes, args.verbose, FileFormat.IMAGE
+            )
         except Exception as e:
             print(f"❌ VLM Parser 오류: {e}")
             results["VLM"] = {"success": False, "error": str(e)}
 
-    # 2. OCR Parser (Text)
-    try:
-        results["OCR-Text"] = test_ocr_text_parser(pdf_bytes, args.verbose)
-    except Exception as e:
-        print(f"❌ OCR-Text Parser 오류: {e}")
-        results["OCR-Text"] = {"success": False, "error": str(e)}
+    elif file_format in [FileFormat.HWP, FileFormat.HWPX]:
+        # HWP/HWPX: VLM만 테스트 (이미지로 변환됨)
+        print("\n⚠️ HWP/HWPX 입력: VLM Parser만 테스트합니다")
 
-    # 3. OCR Parser (Image - Docling)
-    if not args.skip_docling:
+        if args.skip_vlm:
+            print("❌ --skip-vlm 옵션이 설정되어 테스트할 파서가 없습니다.")
+            sys.exit(1)
+
         try:
-            results["OCR-Image"] = test_ocr_image_parser(pdf_bytes, args.verbose)
+            results["VLM"] = test_vlm_parser(
+                input_bytes, args.verbose, file_format,
+                pre_converted_images=hwp_images
+            )
         except Exception as e:
-            print(f"❌ OCR-Image Parser 오류: {e}")
-            results["OCR-Image"] = {"success": False, "error": str(e)}
+            print(f"❌ VLM Parser 오류: {e}")
+            results["VLM"] = {"success": False, "error": str(e)}
 
     # 평가 (Ground Truth가 있는 경우)
     evaluation = None
@@ -664,7 +937,7 @@ def main():
 
     # 결과 파일 저장 (--output-dir 또는 --save-docs 옵션)
     if args.output_dir:
-        save_results_to_files(results, args.output_dir, args.pdf, evaluation, args.tokenizer)
+        save_results_to_files(results, args.output_dir, str(input_path), evaluation, args.tokenizer)
 
     # 요약 출력
     print_summary(results, evaluation)

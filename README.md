@@ -179,7 +179,34 @@ python -m src.test_parsers \
 python -m src.test_parsers --pdf document.pdf --gt ground_truth.md --skip-vlm
 ```
 
-### 2. Full Benchmark Pipeline
+### 2. Chunking Quality Evaluation (BC/CS)
+
+Evaluate chunking quality using MoC-based metrics without Ground Truth:
+
+```bash
+# Basic evaluation with PDF input
+python -m src.test_chunking --input data/test_1/test_data_1.pdf
+
+# With mock LLM (no API required, for testing)
+python -m src.test_chunking --input data/test.pdf --use-mock
+
+# Evaluate pre-parsed files
+python -m src.test_chunking --parsed-files data/test_1/gt_data_1.md --use-mock
+
+# Full evaluation with complete graph
+python -m src.test_chunking \
+    --input data/test.pdf \
+    --graph-type complete \
+    --threshold-k 0.7 \
+    --output-dir results/chunks/
+
+# Skip VLM parser (OCR only)
+python -m src.test_chunking --input data/test.pdf --skip-vlm --use-mock
+```
+
+**Output**: JSON chunks, evaluation.json, README.md summary in `results/chunks/<timestamp>/`
+
+### 3. Full Benchmark Pipeline
 
 ```bash
 # Run complete evaluation with config
@@ -193,7 +220,7 @@ python -m src.run_benchmark \
     --output results/
 ```
 
-### 3. Generate Q&A Dataset
+### 4. Generate Q&A Dataset
 
 ```bash
 # Generate Q&A pairs from ground truth documents
@@ -205,7 +232,7 @@ python -m experiments.generate_qa \
 python -m experiments.generate_qa --provider openai --questions-per-doc 15
 ```
 
-### 4. Streamlit Web UI
+### 5. Streamlit Web UI
 
 ```bash
 streamlit run src/app.py --server.port 8501
@@ -227,12 +254,19 @@ streamlit run src/app.py --server.port 8501
 - `I`: Insertions (hallucinated content)
 - `N`: Total characters/words in ground truth
 
-### Phase 2: Structural Integrity
+### Phase 2: Structural Integrity (MoC-based)
+
+Based on the MoC paper (arXiv:2503.09600v2), we use label-free metrics:
 
 | Metric | Formula | Description |
 |--------|---------|-------------|
-| **Boundary Score (BS)** | `\|B_pred ∩ B_gt\| / \|B_gt\|` | Semantic boundary alignment |
-| **Chunk Score (CS)** | `avg(coherence(chunk))` | Intra-chunk semantic coherence |
+| **BC (Boundary Clarity)** | `ppl(q\|d) / ppl(q)` | Higher is better - chunks are independent |
+| **CS (Chunk Stickiness)** | Structural Entropy | Lower is better - less inter-chunk dependency |
+
+**Key Advantages**:
+- No Ground Truth required
+- Repeatable measurements in production
+- Strong correlation with RAG performance (BC↔ROUGE-L: 0.88)
 
 ### Phase 3: Retrieval Performance
 
@@ -258,7 +292,8 @@ streamlit run src/app.py --server.port 8501
 test-vlm-document-parsing/
 ├── src/
 │   ├── app.py                    # Streamlit Web UI
-│   ├── test_parsers.py           # CLI parser comparison tool
+│   ├── test_parsers.py           # CLI parser comparison tool (CER/WER)
+│   ├── test_chunking.py          # CLI chunking evaluation (BC/CS)
 │   ├── run_benchmark.py          # Full evaluation pipeline
 │   │
 │   ├── parsers/                  # Parser implementations
@@ -268,7 +303,7 @@ test-vlm-document-parsing/
 │   │
 │   ├── chunking/                 # Text chunking module
 │   │   ├── chunker.py            # Chunking strategies
-│   │   └── metrics.py            # BS, CS calculation
+│   │   └── metrics.py            # BC/CS metrics (MoC-based)
 │   │
 │   ├── retrieval/                # Retrieval evaluation
 │   │   ├── embedder.py           # Text embeddings

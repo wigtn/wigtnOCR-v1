@@ -3349,13 +3349,17 @@ name = "vlm-document-parsing-test"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "docling" },
     { name = "httpx" },
     { name = "jiwer" },
     { name = "konlpy" },
+    { name = "numpy" },
     { name = "pandas" },
     { name = "pdf2image" },
     { name = "pdfplumber" },
     { name = "pillow" },
+    { name = "plotly" },
+    { name = "pytest" },
     { name = "python-levenshtein" },
     { name = "pyyaml" },
     { name = "streamlit" },
@@ -3385,16 +3389,20 @@ visualization = [
 
 [package.metadata]
 requires-dist = [
+    { name = "docling", specifier = ">=2.69.0" },
     { name = "docling", marker = "extra == 'docling'", specifier = ">=2.0.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "jiwer", specifier = ">=3.0.0" },
     { name = "konlpy", specifier = ">=0.6.0" },
     { name = "konlpy", marker = "extra == 'korean'", specifier = ">=0.6.0" },
+    { name = "numpy", specifier = ">=1.24.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pdf2image", specifier = ">=1.16.0" },
     { name = "pdfplumber", specifier = ">=0.11.0" },
     { name = "pillow", specifier = ">=10.0.0" },
+    { name = "plotly", specifier = ">=5.18.0" },
     { name = "plotly", marker = "extra == 'visualization'", specifier = ">=5.18.0" },
+    { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "python-levenshtein", specifier = ">=0.25.0" },

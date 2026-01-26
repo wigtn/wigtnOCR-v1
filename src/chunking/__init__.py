@@ -1,9 +1,10 @@
 """
 Semantic Chunking Module for VLM Document Parsing Evaluation
 
-This module provides text chunking strategies for creating semantic chunks
-from parsed document content. All chunking parameters are controlled to
-ensure fair comparison between different parsers.
+This module provides:
+- Text chunking strategies (fixed, recursive, semantic, hierarchical)
+- Label-free quality metrics (BC, CS) based on MoC paper (arXiv:2503.09600v2)
+- LLM client for perplexity-based metric calculation
 """
 
 from .chunker import (
@@ -13,14 +14,26 @@ from .chunker import (
     TextChunker,
     RecursiveCharacterChunker,
     SemanticChunker,
+    HierarchicalChunker,
+    FixedSizeChunker,
     create_chunker,
 )
 from .metrics import (
-    BoundaryScore,
-    ChunkScore,
+    # Data classes
+    BCScore,
+    CSScore,
     ChunkingMetrics,
-    calculate_boundary_score,
-    calculate_chunk_score,
+    # LLM clients
+    LLMClient,
+    MockLLMClient,
+    # Functions
+    calculate_bc,
+    calculate_cs,
+    calculate_edge_weight,
+    calculate_structural_entropy,
+    build_chunk_graph,
+    evaluate_chunking,
+    compare_chunking_quality,
 )
 
 __all__ = [
@@ -31,11 +44,22 @@ __all__ = [
     "TextChunker",
     "RecursiveCharacterChunker",
     "SemanticChunker",
+    "HierarchicalChunker",
+    "FixedSizeChunker",
     "create_chunker",
-    # Metrics
-    "BoundaryScore",
-    "ChunkScore",
+    # Metrics - Data classes
+    "BCScore",
+    "CSScore",
     "ChunkingMetrics",
-    "calculate_boundary_score",
-    "calculate_chunk_score",
+    # Metrics - LLM clients
+    "LLMClient",
+    "MockLLMClient",
+    # Metrics - Functions
+    "calculate_bc",
+    "calculate_cs",
+    "calculate_edge_weight",
+    "calculate_structural_entropy",
+    "build_chunk_graph",
+    "evaluate_chunking",
+    "compare_chunking_quality",
 ]

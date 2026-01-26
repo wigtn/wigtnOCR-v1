@@ -50,3 +50,6 @@ Thumbs.db
 
 # Drafts (keep in repo but can be ignored if desired)
 _drafts/
+
+# Large Dataset
+*/reference

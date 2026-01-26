@@ -101,32 +101,20 @@ class VLMParser:
     # ## Output:
     # """
 
-    PROMPT = """
-    You are a document TRANSCRIPTION engine, not a writer.
-    Your job is to CONVERT the given document image into Markdown by
-    STRICTLY TRANSCRIBING what is visible in the image.
+    PROMPT = """Transcribe the document image to Markdown. Output ONLY the text visible in the image.
 
-    ## Hard Constraints (must follow):
-    - DO NOT add, rephrase, summarize, infer, or translate any text.
-    - DO NOT explain, comment, or describe what you are doing.
-    - If something is partially cut off or unreadable, write `[UNREADABLE]` instead of guessing.
-    - If a value is missing in the image, leave it blank or use `[EMPTY]`. Never invent values.
+CRITICAL RULES:
+1. NEVER add ```markdown or ``` code fences
+2. NEVER add text that is not visible in the image
+3. NEVER summarize, explain, or comment
+4. Skip page numbers (like "- 7 -" or "page 1")
 
-    ## Markdown Formatting Rules:
-    1. Headers: use `#` for the main title, `##` for sections, `###` for subsections
-    2. Tables: preserve rows/columns as Markdown tables using `|` and `---`
-    3. Lists: use `-` for bullets, `1.` for numbered lists
-    4. Images/Charts: if there is a visible caption, transcribe it; otherwise use `[Figure]`
-    5. Forms: use `Field: Value` exactly as written
+FORMAT:
+- Use # ## ### for headers
+- Use | for tables
+- Use - for bullet lists
 
-    ## Important:
-    - Follow the reading order a human would use (left to right, top to bottom).
-    - Preserve line breaks and spacing where they matter for meaning (e.g., in tables or forms).
-    - Output VALID Markdown ONLY. No extra text before or after.
-
-    ## Output:
-    (Write ONLY the transcribed Markdown content here.)
-    """
+START TRANSCRIPTION:"""
 
     # ==========================================================================
     # Constructor
