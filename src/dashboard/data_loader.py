@@ -1,16 +1,37 @@
 """
-Data loading and transformation utilities for the dashboard.
+Data loading utilities for VLM Document Parsing Dashboard.
 
-Supports:
-1. Manual input of test results
-2. Loading from benchmark JSON files
+Supports loading test results from JSON files with caching.
+
+Usage:
+    from dashboard.data_loader import load_results, load_results_cached
+
+    # With Streamlit caching
+    data = load_results_cached()
+
+    # Without caching (for CLI usage)
+    data = load_results()
 """
 
 import json
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass
 import pandas as pd
+
+try:
+    import streamlit as st
+    HAS_STREAMLIT = True
+except ImportError:
+    HAS_STREAMLIT = False
+
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+DEFAULT_RESULTS_PATH = Path(__file__).parent.parent.parent / "results" / "parsing_results.json"
+CACHE_TTL = 3600  # 1 hour
 
 
 # =============================================================================
@@ -18,363 +39,421 @@ import pandas as pd
 # =============================================================================
 
 @dataclass
-class ParserResult:
-    """Single parser result for a test."""
-    wer: float = 0.0
-    cer: float = 0.0
-    bleu: float = 0.0
-    char_acc: float = 0.0
-    latency: float = 0.0
-    success: bool = True
-    content_length: int = 0
+class ParsedData:
+    """Parsed and structured test results."""
+    version: str
+    created_at: str
+    parsers: List[str]
+    parsing_results: List[Dict[str, Any]]
+    chunking_results: List[Dict[str, Any]]
+    raw_data: Dict[str, Any]
 
+    @property
+    def total_tests(self) -> int:
+        return len(self.parsing_results)
 
-@dataclass
-class ChunkingMetrics:
-    """Chunking quality metrics."""
-    bc: float = 0.0  # Boundary Clarity (higher is better)
-    cs: float = 0.0  # Chunk Stickiness (lower is better)
-
-
-@dataclass
-class TestResult:
-    """Complete result for a single test case."""
-    name: str
-    doc_type: str = "unknown"
-    parsers: Dict[str, ParserResult] = field(default_factory=dict)
-    chunking: Optional[ChunkingMetrics] = None
+    @property
+    def total_chunks(self) -> int:
+        return sum(len(r.get("chunks", [])) for r in self.chunking_results)
 
 
 # =============================================================================
-# Data Loader Class
+# Core Loading Functions
 # =============================================================================
 
-class DataLoader:
-    """Load and transform test data from various sources."""
+def load_results(results_path: Optional[Path] = None) -> Dict[str, Any]:
+    """
+    Load test results from JSON file.
 
-    def __init__(self):
-        self.test_results: Dict[str, TestResult] = {}
-        self._raw_data: Dict[str, Any] = {}
+    Args:
+        results_path: Path to JSON file. Uses default if not specified.
 
-    def load_from_manual_input(self, data: Dict[str, Any]) -> None:
-        """Load data from manual input dictionary.
+    Returns:
+        Dict with keys: version, created_at, test_config, parsing_results, chunking_results
+        Or dict with "error" key if file not found.
+    """
+    path = results_path or DEFAULT_RESULTS_PATH
 
-        Expected format:
+    if not path.exists():
+        return {
+            "error": f"결과 파일이 없습니다: {path}\nCLI에서 테스트를 먼저 실행하세요.",
+            "path": str(path),
+        }
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+    except json.JSONDecodeError as e:
+        return {
+            "error": f"JSON 파싱 오류: {e}",
+            "path": str(path),
+        }
+    except Exception as e:
+        return {
+            "error": f"파일 로드 실패: {e}",
+            "path": str(path),
+        }
+
+
+def load_results_cached(results_path: Optional[Path] = None) -> Dict[str, Any]:
+    """
+    Load test results with Streamlit caching.
+
+    Uses @st.cache_data with 1-hour TTL for performance.
+    Falls back to non-cached version if Streamlit not available.
+    """
+    if not HAS_STREAMLIT:
+        return load_results(results_path)
+
+    # Define cached function inside to avoid decorator issues
+    @st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+    def _cached_load(path_str: str) -> Dict[str, Any]:
+        return load_results(Path(path_str))
+
+    path = results_path or DEFAULT_RESULTS_PATH
+    return _cached_load(str(path))
+
+
+# =============================================================================
+# Data Transformation Functions
+# =============================================================================
+
+def get_parsing_data(data: Dict[str, Any]) -> Dict[str, Dict]:
+    """
+    Transform parsing results to dashboard-friendly format.
+
+    Returns:
+        Dict keyed by test_id with structure:
         {
             "test_1": {
-                "name": "Paper PDF",
-                "doc_type": "paper",
+                "id": "Test 1",
+                "name": "...",
+                "doc_type": "...",
                 "parsers": {
-                    "vlm": {"wer": 0.15, "bleu": 0.82, ...},
-                    "ocr": {"wer": 0.25, "bleu": 0.65, ...},
-                },
-                "chunking": {"bc": 0.95, "cs": 1.2}
-            },
-            ...
-        }
-        """
-        self._raw_data = data
-        self.test_results = {}
-
-        for test_id, test_data in data.items():
-            parsers = {}
-            for parser_name, parser_data in test_data.get("parsers", {}).items():
-                parsers[parser_name] = ParserResult(
-                    wer=parser_data.get("wer", 0.0),
-                    cer=parser_data.get("cer", 0.0),
-                    bleu=parser_data.get("bleu", 0.0),
-                    char_acc=parser_data.get("char_acc", 0.0),
-                    latency=parser_data.get("latency", 0.0),
-                    success=parser_data.get("success", True),
-                    content_length=parser_data.get("content_length", 0),
-                )
-
-            chunking = None
-            if "chunking" in test_data:
-                chunking = ChunkingMetrics(
-                    bc=test_data["chunking"].get("bc", 0.0),
-                    cs=test_data["chunking"].get("cs", 0.0),
-                )
-
-            self.test_results[test_id] = TestResult(
-                name=test_data.get("name", test_id),
-                doc_type=test_data.get("doc_type", "unknown"),
-                parsers=parsers,
-                chunking=chunking,
-            )
-
-    def load_from_json_file(self, file_path: Path) -> None:
-        """Load data from a benchmark JSON file.
-
-        Expected format (from run_benchmark.py output):
-        {
-            "benchmark_info": {...},
-            "results": {
-                "test_1": {
-                    "parsers": {...},
-                    "chunking": {...}
+                    "VLM (Qwen3-VL)": {"wer": 0.1, "cer": 0.08, ...},
+                    ...
                 }
             }
         }
-        """
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    """
+    if "error" in data:
+        return {}
 
-        self._raw_data = data
+    result = {}
+    for item in data.get("parsing_results", []):
+        test_id = item.get("test_id", "unknown")
+        result[test_id] = {
+            "id": test_id.replace("_", " ").title(),
+            "name": item.get("name", test_id),
+            "doc_type": item.get("doc_type", "unknown"),
+            "source_path": item.get("source_path", ""),
+            "ground_truth_path": item.get("ground_truth_path", ""),
+            "parsers": item.get("results", {}),
+        }
+    return result
 
-        # Handle both direct format and nested format
-        if "results" in data:
-            results_data = data["results"]
-        else:
-            results_data = data
 
-        self.load_from_manual_input(results_data)
+def get_chunking_data(data: Dict[str, Any]) -> Dict[str, Dict]:
+    """
+    Transform chunking results to dashboard-friendly format.
 
-    def load_from_json_string(self, json_string: str) -> None:
-        """Load data from a JSON string."""
-        data = json.loads(json_string)
+    Supports both legacy (List) and new (Dict, per-parser) formats.
 
-        if "results" in data:
-            results_data = data["results"]
-        else:
-            results_data = data
+    Legacy format (v1.0):
+        chunking_results: [{strategy: "Semantic", ...}, ...]
 
-        self.load_from_manual_input(results_data)
+    New format (v1.1):
+        chunking_results: {
+            "VLM (Qwen3-VL)": {parser: ..., strategies: [...]},
+            ...
+        }
 
-    # =========================================================================
-    # Data Transformation Methods
-    # =========================================================================
+    Returns:
+        Dict keyed by parser with structure (new format):
+        {
+            "VLM (Qwen3-VL)": {
+                "parser": "VLM (Qwen3-VL)",
+                "strategies": [
+                    {"strategy": "Semantic", "mean_bc": 0.88, ...},
+                    ...
+                ]
+            }
+        }
 
-    def get_parser_metrics_df(
-        self,
-        test_ids: Optional[List[str]] = None,
-        parsers: Optional[List[str]] = None,
-    ) -> pd.DataFrame:
-        """Get parser performance metrics as a DataFrame.
+        Or legacy format (backward compatible):
+        {
+            "_legacy": {
+                "parser": "_legacy",
+                "strategies": [
+                    {"strategy": "Semantic", ...},
+                    ...
+                ]
+            }
+        }
+    """
+    if "error" in data:
+        return {}
 
-        Returns DataFrame with columns:
-        - test_id, test_name, parser, wer, cer, bleu, char_acc, latency
-        """
-        rows = []
+    chunking_results = data.get("chunking_results", {})
 
-        for test_id, result in self.test_results.items():
-            if test_ids and test_id not in test_ids:
-                continue
+    # Legacy format detection (List)
+    if isinstance(chunking_results, list):
+        strategies = []
+        for item in chunking_results:
+            strategies.append({
+                "strategy": item.get("strategy", "unknown"),
+                "params": item.get("params", {}),
+                "chunks": item.get("chunks", []),
+                "mean_bc": item.get("mean_bc", 0.0),
+                "mean_cs": item.get("mean_cs", 0.0),
+                "std_bc": item.get("std_bc"),
+                "std_cs": item.get("std_cs"),
+                "bc_by_sentence": item.get("bc_by_sentence", []),
+            })
+        return {"_legacy": {"parser": "_legacy", "strategies": strategies}}
 
-            for parser_name, parser_result in result.parsers.items():
-                if parsers and parser_name.lower() not in [p.lower() for p in parsers]:
-                    continue
+    # New format (Dict, per-parser)
+    return chunking_results
 
-                rows.append({
-                    "test_id": test_id,
-                    "test_name": result.name,
-                    "doc_type": result.doc_type,
-                    "parser": parser_name,
-                    "wer": parser_result.wer,
-                    "cer": parser_result.cer,
-                    "bleu": parser_result.bleu,
-                    "char_acc": parser_result.char_acc,
-                    "latency": parser_result.latency,
-                    "success": parser_result.success,
-                })
 
-        return pd.DataFrame(rows)
+def get_chunking_data_for_parser(data: Dict[str, Any], parser: str) -> List[Dict]:
+    """
+    Get chunking strategies for a specific parser.
 
-    def get_chunking_metrics_df(
-        self,
-        test_ids: Optional[List[str]] = None,
-    ) -> pd.DataFrame:
-        """Get chunking metrics as a DataFrame.
+    Args:
+        data: Raw JSON data
+        parser: Parser name (e.g., "VLM (Qwen3-VL)")
 
-        Returns DataFrame with columns:
-        - test_id, test_name, bc, cs
-        """
-        rows = []
+    Returns:
+        List of strategy dicts for the specified parser
+    """
+    chunking_data = get_chunking_data(data)
 
-        for test_id, result in self.test_results.items():
-            if test_ids and test_id not in test_ids:
-                continue
+    if parser in chunking_data:
+        return chunking_data[parser].get("strategies", [])
 
-            if result.chunking:
-                rows.append({
-                    "test_id": test_id,
-                    "test_name": result.name,
-                    "doc_type": result.doc_type,
-                    "bc": result.chunking.bc,
-                    "cs": result.chunking.cs,
-                })
+    # Legacy fallback
+    if "_legacy" in chunking_data:
+        return chunking_data["_legacy"].get("strategies", [])
 
-        return pd.DataFrame(rows)
+    return []
 
-    def get_aggregated_metrics(
-        self,
-        parsers: Optional[List[str]] = None,
-    ) -> pd.DataFrame:
-        """Get aggregated metrics per parser (mean across all tests).
 
-        Returns DataFrame with columns:
-        - parser, avg_wer, avg_cer, avg_bleu, avg_char_acc, avg_latency, win_count
-        """
-        df = self.get_parser_metrics_df(parsers=parsers)
+def get_chunking_parsers(data: Dict[str, Any]) -> List[str]:
+    """
+    Get list of parsers that have chunking results.
 
-        if df.empty:
-            return pd.DataFrame()
+    Returns:
+        List of parser names with chunking data
+    """
+    chunking_data = get_chunking_data(data)
 
-        # Calculate aggregates
-        agg_df = df.groupby("parser").agg({
-            "wer": "mean",
-            "cer": "mean",
-            "bleu": "mean",
-            "char_acc": "mean",
-            "latency": "mean",
-        }).reset_index()
+    if "_legacy" in chunking_data:
+        return ["_legacy"]
 
-        agg_df.columns = ["parser", "avg_wer", "avg_cer", "avg_bleu", "avg_char_acc", "avg_latency"]
+    return list(chunking_data.keys())
 
-        # Calculate win count (best WER per test)
-        win_counts = {}
-        for test_id in df["test_id"].unique():
-            test_df = df[df["test_id"] == test_id]
-            if not test_df.empty:
-                best_parser = test_df.loc[test_df["wer"].idxmin(), "parser"]
-                win_counts[best_parser] = win_counts.get(best_parser, 0) + 1
 
-        agg_df["win_count"] = agg_df["parser"].map(lambda p: win_counts.get(p, 0))
+def get_parser_names(data: Dict[str, Any]) -> List[str]:
+    """Get list of parser names from config or results."""
+    if "error" in data:
+        return []
 
-        return agg_df
+    # Try from config first
+    if "test_config" in data and "parsers" in data["test_config"]:
+        return data["test_config"]["parsers"]
 
-    def get_heatmap_data(
-        self,
-        metric: str = "wer",
-        test_ids: Optional[List[str]] = None,
-        parsers: Optional[List[str]] = None,
-    ) -> pd.DataFrame:
-        """Get data formatted for heatmap visualization.
-
-        Returns pivot table with:
-        - Rows: doc_type or test_name
-        - Columns: parsers
-        - Values: specified metric
-        """
-        df = self.get_parser_metrics_df(test_ids=test_ids, parsers=parsers)
-
-        if df.empty:
-            return pd.DataFrame()
-
-        # Pivot table
-        pivot = df.pivot_table(
-            index="test_name",
-            columns="parser",
-            values=metric,
-            aggfunc="mean"
-        )
-
-        return pivot
-
-    # =========================================================================
-    # KPI Calculation Methods
-    # =========================================================================
-
-    def get_best_parser(self) -> tuple:
-        """Get the best parser based on win rate.
-
-        Returns:
-            (parser_name, win_rate)
-        """
-        agg_df = self.get_aggregated_metrics()
-
-        if agg_df.empty:
-            return ("N/A", 0.0)
-
-        total_tests = len(self.test_results)
-        if total_tests == 0:
-            return ("N/A", 0.0)
-
-        best_row = agg_df.loc[agg_df["win_count"].idxmax()]
-        win_rate = best_row["win_count"] / total_tests
-
-        return (best_row["parser"], win_rate)
-
-    def get_average_wer(self, parser: Optional[str] = None) -> float:
-        """Get average WER across all tests or for a specific parser."""
-        df = self.get_parser_metrics_df()
-
-        if df.empty:
-            return 0.0
-
-        if parser:
-            df = df[df["parser"].str.lower() == parser.lower()]
-
-        return df["wer"].mean() if not df.empty else 0.0
-
-    def get_test_coverage(self) -> tuple:
-        """Get test coverage statistics.
-
-        Returns:
-            (completed_tests, total_tests)
-        """
-        total = len(self.test_results)
-        completed = sum(
-            1 for r in self.test_results.values()
-            if any(p.success for p in r.parsers.values())
-        )
-        return (completed, total)
-
-    def get_test_ids(self) -> List[str]:
-        """Get list of all test IDs."""
-        return list(self.test_results.keys())
-
-    def get_parser_names(self) -> List[str]:
-        """Get list of all unique parser names."""
-        parsers = set()
-        for result in self.test_results.values():
-            parsers.update(result.parsers.keys())
-        return sorted(list(parsers))
+    # Extract from results
+    parsers = set()
+    for item in data.get("parsing_results", []):
+        parsers.update(item.get("results", {}).keys())
+    return sorted(list(parsers))
 
 
 # =============================================================================
-# Sample Data Generator (for demo/testing)
+# DataFrame Generators
 # =============================================================================
 
-def generate_sample_data() -> Dict[str, Any]:
-    """Generate sample test data for demonstration."""
+def get_parsing_summary_df(data: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Generate summary DataFrame for all parsing tests.
+
+    Columns: Test, Parser, WER, CER, BLEU, Latency
+    """
+    rows = []
+    parsing_data = get_parsing_data(data)
+
+    for test_id, test_info in parsing_data.items():
+        for parser, metrics in test_info["parsers"].items():
+            rows.append({
+                "Test": test_info["id"],
+                "Test Name": test_info["name"],
+                "Parser": parser,
+                "WER": metrics.get("wer", 0),
+                "CER": metrics.get("cer", 0),
+                "BLEU": metrics.get("bleu", 0),
+                "Latency (ms)": metrics.get("latency", 0),
+            })
+
+    return pd.DataFrame(rows)
+
+
+def get_chunking_summary_df(data: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Generate summary DataFrame for chunking strategies.
+
+    Columns: Strategy, Params, Chunks, Mean BC, Mean CS
+    """
+    rows = []
+    chunking_data = get_chunking_data(data)
+
+    for strategy, info in chunking_data.items():
+        params_str = ", ".join(f"{k}={v}" for k, v in info["params"].items())
+        rows.append({
+            "Strategy": strategy,
+            "Parameters": params_str,
+            "Chunks": len(info["chunks"]),
+            "Mean BC": info["mean_bc"],
+            "Mean CS": info["mean_cs"],
+        })
+
+    return pd.DataFrame(rows)
+
+
+def get_aggregated_parser_df(data: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Get aggregated metrics per parser (mean across all tests).
+
+    Columns: Parser, Avg WER, Avg CER, Avg BLEU, Avg Latency, Win Count
+    """
+    parsing_df = get_parsing_summary_df(data)
+
+    if parsing_df.empty:
+        return pd.DataFrame()
+
+    # Aggregate by parser
+    agg_df = parsing_df.groupby("Parser").agg({
+        "WER": "mean",
+        "CER": "mean",
+        "BLEU": "mean",
+        "Latency (ms)": "mean",
+    }).reset_index()
+
+    agg_df.columns = ["Parser", "Avg WER", "Avg CER", "Avg BLEU", "Avg Latency (ms)"]
+
+    # Calculate win count (best WER per test)
+    win_counts = {}
+    for test in parsing_df["Test"].unique():
+        test_df = parsing_df[parsing_df["Test"] == test]
+        if not test_df.empty:
+            best_parser = test_df.loc[test_df["WER"].idxmin(), "Parser"]
+            win_counts[best_parser] = win_counts.get(best_parser, 0) + 1
+
+    agg_df["Win Count"] = agg_df["Parser"].map(lambda p: win_counts.get(p, 0))
+
+    return agg_df
+
+
+# =============================================================================
+# Pagination Helper
+# =============================================================================
+
+def paginate_data(data: List, page: int, page_size: int = 10) -> tuple:
+    """
+    Paginate a list of data.
+
+    Args:
+        data: List to paginate
+        page: Current page (1-indexed)
+        page_size: Items per page
+
+    Returns:
+        (paginated_data, total_pages, has_prev, has_next)
+    """
+    total = len(data)
+    total_pages = (total + page_size - 1) // page_size
+
+    if total_pages == 0:
+        return [], 0, False, False
+
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * page_size
+    end = start + page_size
+
+    return (
+        data[start:end],
+        total_pages,
+        page > 1,
+        page < total_pages
+    )
+
+
+# =============================================================================
+# Export Helpers
+# =============================================================================
+
+def export_df_to_csv(df: pd.DataFrame) -> str:
+    """Export DataFrame to CSV string for download."""
+    return df.to_csv(index=False, encoding="utf-8-sig")
+
+
+def get_chart_download_config(filename: str = "chart") -> Dict[str, Any]:
+    """
+    Get Plotly chart config for PNG download button.
+
+    Usage:
+        fig.update_layout(...)
+        st.plotly_chart(fig, config=get_chart_download_config("my_chart"))
+    """
     return {
-        "test_1": {
-            "name": "Academic Paper PDF",
-            "doc_type": "paper",
-            "parsers": {
-                "VLM": {"wer": 0.12, "cer": 0.08, "bleu": 0.85, "char_acc": 0.96, "latency": 5.2},
-                "OCR": {"wer": 0.25, "cer": 0.18, "bleu": 0.68, "char_acc": 0.88, "latency": 1.5},
-                "Docling": {"wer": 0.18, "cer": 0.12, "bleu": 0.78, "char_acc": 0.92, "latency": 3.8},
-            },
-            "chunking": {"bc": 0.92, "cs": 1.1},
+        "toImageButtonOptions": {
+            "format": "png",
+            "filename": filename,
+            "height": 600,
+            "width": 1200,
+            "scale": 2,
         },
-        "test_2": {
-            "name": "Invoice Scan",
-            "doc_type": "invoice",
-            "parsers": {
-                "VLM": {"wer": 0.08, "cer": 0.05, "bleu": 0.92, "char_acc": 0.98, "latency": 4.8},
-                "OCR": {"wer": 0.35, "cer": 0.28, "bleu": 0.55, "char_acc": 0.78, "latency": 1.2},
-                "Docling": {"wer": 0.22, "cer": 0.15, "bleu": 0.72, "char_acc": 0.88, "latency": 3.5},
-            },
-            "chunking": {"bc": 0.88, "cs": 1.4},
-        },
-        "test_3": {
-            "name": "Technical Manual",
-            "doc_type": "manual",
-            "parsers": {
-                "VLM": {"wer": 0.15, "cer": 0.10, "bleu": 0.82, "char_acc": 0.94, "latency": 6.1},
-                "OCR": {"wer": 0.20, "cer": 0.14, "bleu": 0.75, "char_acc": 0.90, "latency": 1.8},
-                "Docling": {"wer": 0.16, "cer": 0.11, "bleu": 0.80, "char_acc": 0.93, "latency": 4.2},
-            },
-            "chunking": {"bc": 0.95, "cs": 0.9},
-        },
+        "displayModeBar": True,
+        "modeBarButtonsToAdd": ["downloadImage"],
     }
 
 
-def load_benchmark_files(results_dir: Path) -> List[Path]:
-    """Find all benchmark JSON files in the results directory."""
-    if not results_dir.exists():
-        return []
+# =============================================================================
+# Sample Data (Fallback)
+# =============================================================================
 
-    return sorted(results_dir.glob("benchmark_*.json"))
+def get_sample_data() -> Dict[str, Any]:
+    """
+    Return sample data for demonstration when no JSON file exists.
+
+    This provides a reasonable default for development/testing.
+    """
+    return {
+        "version": "1.0",
+        "created_at": "2026-01-27T00:00:00Z",
+        "test_config": {
+            "parsers": ["VLM (Qwen3-VL)", "pdfplumber", "Docling (RapidOCR)"]
+        },
+        "parsing_results": [
+            {
+                "test_id": "test_1",
+                "name": "Sample Document",
+                "doc_type": "PDF",
+                "results": {
+                    "VLM (Qwen3-VL)": {"wer": 0.12, "cer": 0.09, "bleu": 0.85, "latency": 5000},
+                    "pdfplumber": {"wer": 0.18, "cer": 0.14, "bleu": 0.72, "latency": 1200},
+                    "Docling (RapidOCR)": {"wer": 0.25, "cer": 0.20, "bleu": 0.65, "latency": 3500},
+                }
+            }
+        ],
+        "chunking_results": [
+            {
+                "strategy": "Fixed",
+                "params": {"chunk_size": 512, "overlap": 50},
+                "chunks": [{"id": 1, "bc": 0.7, "cs": 0.8, "length": 512}],
+                "mean_bc": 0.7,
+                "mean_cs": 0.8,
+            }
+        ]
+    }

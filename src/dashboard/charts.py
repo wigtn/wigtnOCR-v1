@@ -200,6 +200,23 @@ def create_metrics_comparison_chart(
 
 
 # =============================================================================
+# Chunking Strategy Colors
+# =============================================================================
+
+STRATEGY_COLORS = {
+    "Fixed": "#6366F1",       # Indigo
+    "Sentence": "#10B981",    # Emerald
+    "Semantic": "#F59E0B",    # Amber
+    "Structuring": "#8B5CF6", # Purple
+}
+
+
+def get_strategy_color(strategy: str) -> str:
+    """Get color for a chunking strategy."""
+    return STRATEGY_COLORS.get(strategy, "#888888")
+
+
+# =============================================================================
 # Chunking Metrics Charts
 # =============================================================================
 
@@ -632,6 +649,276 @@ def create_latency_comparison(
         text="Lower is better",
         showarrow=False,
         font=dict(size=10, color=COLORS["good"]),
+    )
+
+    return apply_layout(fig, title, height)
+
+
+# =============================================================================
+# New Chunking Charts (MoC-based)
+# =============================================================================
+
+def create_parser_chunking_comparison(
+    chunking_results: dict,
+    strategy: str = "Semantic",
+    title: str = "Parser별 Chunking 품질 비교",
+    height: int = 400,
+) -> go.Figure:
+    """Create grouped bar chart comparing BC/CS across parsers for a strategy.
+
+    Args:
+        chunking_results: Dict keyed by parser name with 'strategies' list
+        strategy: Strategy to compare (e.g., "Semantic")
+        title: Chart title
+        height: Chart height
+
+    Returns:
+        Plotly Figure
+    """
+    parsers = []
+    bc_values = []
+    cs_values = []
+    bc_stds = []
+    cs_stds = []
+
+    for parser, data in chunking_results.items():
+        if parser == "_legacy":
+            continue
+
+        strategies = data.get("strategies", [])
+        strategy_data = next(
+            (s for s in strategies if s.get("strategy") == strategy),
+            None
+        )
+
+        if strategy_data:
+            parsers.append(parser)
+            bc_values.append(strategy_data.get("mean_bc", 0))
+            cs_values.append(strategy_data.get("mean_cs") or 0)
+            bc_stds.append(strategy_data.get("std_bc") or 0)
+            cs_stds.append(strategy_data.get("std_cs") or 0)
+
+    if not parsers:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No data available",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=16, color=COLORS["text_secondary"])
+        )
+        return apply_layout(fig, title, height)
+
+    fig = go.Figure()
+
+    # BC bars (higher is better - green)
+    fig.add_trace(go.Bar(
+        name="BC (↑ Higher is better)",
+        x=parsers,
+        y=bc_values,
+        error_y=dict(type='data', array=bc_stds, visible=True),
+        marker_color="#10B981",  # Green
+        text=[f"{v:.3f}" for v in bc_values],
+        textposition="outside",
+        textfont=dict(size=10),
+    ))
+
+    # CS bars (lower is better - orange)
+    fig.add_trace(go.Bar(
+        name="CS (↓ Lower is better)",
+        x=parsers,
+        y=cs_values,
+        error_y=dict(type='data', array=cs_stds, visible=True),
+        marker_color="#F59E0B",  # Orange
+        text=[f"{v:.3f}" for v in cs_values],
+        textposition="outside",
+        textfont=dict(size=10),
+    ))
+
+    fig.update_layout(
+        barmode="group",
+        xaxis_title="Parser",
+        yaxis_title="Score",
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
+        ),
+    )
+
+    return apply_layout(fig, f"{title} ({strategy} Strategy)", height)
+
+
+def create_bc_document_flow(
+    strategies_data: list,
+    title: str = "Boundary Clarity by Document Flow",
+    height: int = 400,
+) -> go.Figure:
+    """Create line chart showing BC across sentence indices.
+
+    Args:
+        strategies_data: List of strategy dicts with 'bc_by_sentence' field
+        title: Chart title
+        height: Chart height
+
+    Returns:
+        Plotly Figure
+    """
+    fig = go.Figure()
+    has_data = False
+
+    for strategy_data in strategies_data:
+        strategy = strategy_data.get("strategy", "Unknown")
+        bc_by_sentence = strategy_data.get("bc_by_sentence", [])
+
+        if bc_by_sentence:
+            has_data = True
+            x_vals = [d["sentence_idx"] for d in bc_by_sentence]
+            y_vals = [d["bc"] for d in bc_by_sentence]
+
+            # Mark boundary points
+            boundary_x = [d["sentence_idx"] for d in bc_by_sentence if d.get("is_boundary")]
+            boundary_y = [d["bc"] for d in bc_by_sentence if d.get("is_boundary")]
+
+            # Main line
+            fig.add_trace(go.Scatter(
+                x=x_vals,
+                y=y_vals,
+                mode='lines',
+                name=strategy,
+                line=dict(color=get_strategy_color(strategy), width=2),
+            ))
+
+            # Boundary markers
+            if boundary_x:
+                fig.add_trace(go.Scatter(
+                    x=boundary_x,
+                    y=boundary_y,
+                    mode='markers',
+                    name=f"{strategy} (boundaries)",
+                    marker=dict(
+                        color=get_strategy_color(strategy),
+                        size=10,
+                        symbol="diamond",
+                        line=dict(width=1, color="white"),
+                    ),
+                    showlegend=False,
+                ))
+
+    if not has_data:
+        fig.add_annotation(
+            text="No bc_by_sentence data available",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=14, color=COLORS["text_secondary"])
+        )
+
+    fig.update_layout(
+        xaxis_title="Sentence Index (Document Flow)",
+        yaxis_title="Boundary Clarity",
+        yaxis=dict(range=[0, 1.05]),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
+        ),
+    )
+
+    # Add annotation
+    fig.add_annotation(
+        x=1, y=-0.12,
+        xref="paper", yref="paper",
+        text="◆ = Chunk boundary | Higher BC at boundaries = better chunking",
+        showarrow=False,
+        font=dict(size=9, color=COLORS["text_muted"]),
+        xanchor="right",
+    )
+
+    return apply_layout(fig, title, height)
+
+
+def create_cs_mean_std_bar(
+    strategies_data: list,
+    title: str = "Chunk Stickiness (Mean ± Std)",
+    height: int = 350,
+) -> go.Figure:
+    """Create bar chart showing CS mean with error bars for each strategy.
+
+    Args:
+        strategies_data: List of strategy dicts with mean_cs, std_cs fields
+        title: Chart title
+        height: Chart height
+
+    Returns:
+        Plotly Figure
+    """
+    strategies = []
+    means = []
+    stds = []
+    colors = []
+    text_labels = []
+
+    for strategy_data in strategies_data:
+        strategy = strategy_data.get("strategy", "Unknown")
+        mean_cs = strategy_data.get("mean_cs")
+        std_cs = strategy_data.get("std_cs")
+
+        strategies.append(strategy)
+
+        if mean_cs is None:  # N/A case (e.g., Structuring)
+            means.append(0)
+            stds.append(0)
+            colors.append("#CCCCCC")  # Gray
+            text_labels.append("N/A")
+        else:
+            means.append(mean_cs)
+            stds.append(std_cs or 0)
+            colors.append(get_strategy_color(strategy))
+            text_labels.append(f"{mean_cs:.3f}")
+
+    if not strategies:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No data available",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=16, color=COLORS["text_secondary"])
+        )
+        return apply_layout(fig, title, height)
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Bar(
+        x=strategies,
+        y=means,
+        error_y=dict(
+            type='data',
+            array=stds,
+            visible=True,
+            color=COLORS["text_muted"],
+        ),
+        marker_color=colors,
+        text=text_labels,
+        textposition="outside",
+        textfont=dict(size=11),
+    ))
+
+    fig.update_layout(
+        xaxis_title="Strategy",
+        yaxis_title="Avg. Intra-chunk Similarity",
+        yaxis=dict(range=[0, max(means) * 1.3 if means and max(means) > 0 else 1]),
+    )
+
+    # Add direction annotation
+    fig.add_annotation(
+        x=0.5, y=-0.15,
+        xref="paper", yref="paper",
+        text="↓ Lower is better (less similarity within chunks = better topic separation)",
+        showarrow=False,
+        font=dict(size=9, color=COLORS["good"]),
     )
 
     return apply_layout(fig, title, height)

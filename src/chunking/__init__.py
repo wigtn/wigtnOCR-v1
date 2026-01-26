@@ -35,6 +35,14 @@ from .metrics import (
     evaluate_chunking,
     compare_chunking_quality,
 )
+from .dashboard_export import (
+    SentenceBCData,
+    StrategyResult,
+    split_sentences,
+    calculate_bc_by_sentence,
+    calculate_cs_by_chunk,
+    export_parser_chunking_results,
+)
 
 __all__ = [
     # Chunker classes
@@ -62,4 +70,11 @@ __all__ = [
     "build_chunk_graph",
     "evaluate_chunking",
     "compare_chunking_quality",
+    # Dashboard export
+    "SentenceBCData",
+    "StrategyResult",
+    "split_sentences",
+    "calculate_bc_by_sentence",
+    "calculate_cs_by_chunk",
+    "export_parser_chunking_results",
 ]

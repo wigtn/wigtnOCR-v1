@@ -47,6 +47,7 @@ Thumbs.db
 *.tmp
 *.temp
 .tmp/
+.ruff_cache
 
 # Drafts (keep in repo but can be ignored if desired)
 _drafts/
