@@ -24,6 +24,7 @@ if str(_src_dir) not in sys.path:
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from typing import Dict, List, Any
 import numpy as np
 
@@ -376,6 +377,95 @@ def create_grouped_bar(all_data: Dict, metric: str, title: str, lower_is_better:
     return fig
 
 
+def create_metrics_comparison_subplot(all_data: Dict) -> go.Figure:
+    """4개 메트릭을 하나의 Subplot으로 통합한 차트
+
+    장점:
+    - Legend가 한 번만 표시됨 (중복 제거)
+    - 일관된 레이아웃
+    - 테스트 간 비교가 용이
+    """
+    test_ids = [d["id"] for d in all_data.values()]
+
+    # 메트릭 정의: (key, title, lower_is_better, format_func)
+    metrics = [
+        ("wer", "WER ↓", True, lambda v: f"{v:.2f}"),
+        ("cer", "CER ↓", True, lambda v: f"{v:.2f}"),
+        ("structure_f1", "Structure F1 ↑", False, lambda v: f"{v:.2f}"),
+        ("elapsed_time", "Latency ↓", True, lambda v: f"{v:.1f}s"),
+    ]
+
+    # 2x2 서브플롯 생성
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=[m[1] for m in metrics],
+        horizontal_spacing=0.08,
+        vertical_spacing=0.12,
+    )
+
+    # 각 메트릭별로 바 추가
+    for idx, (metric_key, title, lower_is_better, fmt) in enumerate(metrics):
+        row = idx // 2 + 1
+        col = idx % 2 + 1
+
+        for parser_idx, parser in enumerate(PARSER_NAMES):
+            color = PARSER_COLORS.get(parser, "#888")
+            values = [
+                test["parsers"].get(parser, {}).get(metric_key) or 0
+                for test in all_data.values()
+            ]
+
+            # 첫 번째 서브플롯에서만 legend 표시
+            show_legend = (idx == 0)
+
+            fig.add_trace(
+                go.Bar(
+                    name=parser,
+                    x=test_ids,
+                    y=values,
+                    marker_color=color,
+                    marker_line_width=0,
+                    text=[fmt(v) for v in values],
+                    textposition="outside",
+                    textfont=dict(size=10),
+                    showlegend=show_legend,
+                    legendgroup=parser,  # legend 그룹핑
+                ),
+                row=row, col=col
+            )
+
+    # 레이아웃 설정
+    fig.update_layout(
+        height=600,
+        barmode="group",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(size=11, color="#666"),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=12),
+        ),
+        margin=dict(l=50, r=30, t=80, b=40),
+        bargap=0.15,
+        bargroupgap=0.05,
+    )
+
+    # 각 축 설정
+    for i in range(1, 5):
+        fig.update_xaxes(showgrid=False, tickfont=dict(size=10), row=(i-1)//2+1, col=(i-1)%2+1)
+        fig.update_yaxes(gridcolor="#E5E5E5", gridwidth=0.5, zeroline=False, tickfont=dict(size=10), row=(i-1)//2+1, col=(i-1)%2+1)
+
+    # 서브플롯 타이틀 스타일
+    for annotation in fig['layout']['annotations']:
+        annotation['font'] = dict(size=13, color="#1a1a2e")
+
+    return fig
+
+
 # =============================================================================
 # 메인 대시보드
 # =============================================================================
@@ -468,40 +558,19 @@ with tab_parsing:
         radar_fig = create_radar_chart(PARSING_DATA)
         st.plotly_chart(
             radar_fig,
-            width="stretch",
+            use_container_width=True,
             config=get_chart_download_config("radar_chart")
         )
 
-    # Metrics Comparison
+    # Metrics Comparison - 통합 Subplot 차트
     st.markdown("#### Metrics Comparison")
 
-    row1 = st.columns(2)
-    row2 = st.columns(2)
-
-    with row1[0]:
-        st.plotly_chart(
-            create_grouped_bar(PARSING_DATA, "wer", "WER", lower_is_better=True),
-            use_container_width=True,
-            config=get_chart_download_config("wer_comparison")
-        )
-    with row1[1]:
-        st.plotly_chart(
-            create_grouped_bar(PARSING_DATA, "cer", "CER", lower_is_better=True),
-            use_container_width=True,
-            config=get_chart_download_config("cer_comparison")
-        )
-    with row2[0]:
-        st.plotly_chart(
-            create_grouped_bar(PARSING_DATA, "structure_f1", "Structure F1", lower_is_better=False),
-            use_container_width=True,
-            config=get_chart_download_config("structure_f1_comparison")
-        )
-    with row2[1]:
-        st.plotly_chart(
-            create_grouped_bar(PARSING_DATA, "elapsed_time", "Latency (s)", lower_is_better=True),
-            use_container_width=True,
-            config=get_chart_download_config("latency_comparison")
-        )
+    metrics_fig = create_metrics_comparison_subplot(PARSING_DATA)
+    st.plotly_chart(
+        metrics_fig,
+        use_container_width=True,
+        config=get_chart_download_config("metrics_comparison")
+    )
 
     st.markdown("---")
 
