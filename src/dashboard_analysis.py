@@ -395,12 +395,12 @@ def create_metrics_comparison_subplot(all_data: Dict) -> go.Figure:
         ("elapsed_time", "Latency ↓", True, lambda v: f"{v:.1f}s"),
     ]
 
-    # 2x2 서브플롯 생성
+    # 2x2 서브플롯 생성 (상하 간격 넓게)
     fig = make_subplots(
         rows=2, cols=2,
         subplot_titles=[m[1] for m in metrics],
-        horizontal_spacing=0.08,
-        vertical_spacing=0.12,
+        horizontal_spacing=0.10,
+        vertical_spacing=0.18,
     )
 
     # 각 메트릭별로 바 추가
@@ -436,7 +436,7 @@ def create_metrics_comparison_subplot(all_data: Dict) -> go.Figure:
 
     # 레이아웃 설정
     fig.update_layout(
-        height=600,
+        height=650,
         barmode="group",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -444,12 +444,12 @@ def create_metrics_comparison_subplot(all_data: Dict) -> go.Figure:
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.02,
-            xanchor="center",
-            x=0.5,
-            font=dict(size=12),
+            y=1.04,
+            xanchor="left",
+            x=0,
+            font=dict(size=14),
         ),
-        margin=dict(l=50, r=30, t=80, b=40),
+        margin=dict(l=50, r=30, t=100, b=40),
         bargap=0.15,
         bargroupgap=0.05,
     )
@@ -459,9 +459,15 @@ def create_metrics_comparison_subplot(all_data: Dict) -> go.Figure:
         fig.update_xaxes(showgrid=False, tickfont=dict(size=10), row=(i-1)//2+1, col=(i-1)%2+1)
         fig.update_yaxes(gridcolor="#E5E5E5", gridwidth=0.5, zeroline=False, tickfont=dict(size=10), row=(i-1)//2+1, col=(i-1)%2+1)
 
-    # 서브플롯 타이틀 스타일
+    # 서브플롯 타이틀 스타일 (크게, 좌측 정렬)
     for annotation in fig['layout']['annotations']:
-        annotation['font'] = dict(size=13, color="#1a1a2e")
+        annotation['font'] = dict(size=15, color="#1a1a2e", weight="bold")
+        annotation['xanchor'] = 'left'
+        # 좌측 정렬을 위해 x 위치 조정 (각 서브플롯의 시작점)
+        if annotation['x'] < 0.5:
+            annotation['x'] = 0.0
+        else:
+            annotation['x'] = 0.55
 
     return fig
 
