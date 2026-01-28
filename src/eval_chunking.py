@@ -9,20 +9,14 @@ metrics that don't require Ground Truth labels.
 Reference: MoC Paper (arXiv:2503.09600v2)
 
 Usage:
-    # Basic evaluation with PDF input
-    python -m src.eval_chunking --input data/test.pdf
-
-    # With specific chunking strategy
-    python -m src.eval_chunking --input data/test.pdf --strategy recursive_character
+    # Full evaluation (all test folders in results/)
+    python -m src.eval_chunking --all
 
     # With existing parsed files
     python -m src.eval_chunking --parsed-dir results/parsing/test_1/
 
-    # Skip VLM parser (use only OCR)
-    python -m src.eval_chunking --input data/test.pdf --skip-vlm
-
-    # Full evaluation with CS graph
-    python -m src.eval_chunking --input data/test.pdf --graph-type complete --threshold-k 0.7
+    # Custom breakpoint settings
+    python -m src.eval_chunking --all --breakpoint-type percentile --breakpoint-threshold 90
 """
 
 import argparse
@@ -43,48 +37,34 @@ try:
     # 방법 1: src.xxx (프로젝트 루트에서 실행)
     from src.chunking.chunker import (
         ChunkerConfig,
-        ChunkingStrategy,
         create_chunker,
         Chunk,
     )
     from src.chunking.metrics import (
         EmbeddingClient,
+        APIEmbeddingClient,
         MockEmbeddingClient,
         create_embedding_client,
         evaluate_chunking,
         ChunkingMetrics,
     )
-    from src.eval_parsers import (
-        FileFormat,
-        detect_file_format,
-        test_vlm_parser,
-        test_ocr_text_parser,
-        test_ocr_image_parser,
-        convert_hwp_to_images,
-    )
+    from src.eval_parsers import FileFormat, detect_file_format
 except ImportError:
     # 방법 2: xxx (src/ 디렉토리에서 실행 또는 PYTHONPATH 설정)
     from chunking.chunker import (
         ChunkerConfig,
-        ChunkingStrategy,
         create_chunker,
         Chunk,
     )
     from chunking.metrics import (
         EmbeddingClient,
+        APIEmbeddingClient,
         MockEmbeddingClient,
         create_embedding_client,
         evaluate_chunking,
         ChunkingMetrics,
     )
-    from eval_parsers import (
-        FileFormat,
-        detect_file_format,
-        test_vlm_parser,
-        test_ocr_text_parser,
-        test_ocr_image_parser,
-        convert_hwp_to_images,
-    )
+    from eval_parsers import FileFormat, detect_file_format
 
 
 # =============================================================================
@@ -93,155 +73,49 @@ except ImportError:
 
 def chunk_text(
     text: str,
-    strategy: ChunkingStrategy = ChunkingStrategy.SEMANTIC,
-    chunk_size: int = 500,
-    chunk_overlap: int = 50,
-    semantic_threshold: float = 0.9,
+    breakpoint_type: str = "percentile",
+    breakpoint_threshold: float = 95.0,
+    min_chunk_size: Optional[int] = None,
+    embedding_api_url: str = "http://localhost:8001/embeddings",
+    embedding_model: str = "BAAI/bge-m3",
     document_id: str = "doc"
 ) -> list[Chunk]:
-    """Chunk text using the specified strategy.
+    """Chunk text using semantic chunking.
 
     Args:
         text: Input text to chunk
-        strategy: Chunking strategy
-        chunk_size: Target chunk size
-        chunk_overlap: Overlap between chunks
-        semantic_threshold: Semantic chunker breakpoint threshold (default: 0.9)
+        breakpoint_type: Type of breakpoint detection (percentile, standard_deviation, interquartile, gradient)
+        breakpoint_threshold: Threshold amount for breakpoint detection
+        min_chunk_size: Minimum chunk size (optional)
+        embedding_api_url: API URL for embeddings
+        embedding_model: Model name for embeddings
         document_id: Document identifier for chunk IDs
 
     Returns:
         List of Chunk objects
     """
     config = ChunkerConfig(
-        strategy=strategy,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        semantic_threshold=semantic_threshold,
+        breakpoint_threshold_type=breakpoint_type,
+        breakpoint_threshold_amount=breakpoint_threshold,
+        min_chunk_size=min_chunk_size,
     )
 
-    chunker = create_chunker(config)
+    chunker = create_chunker(
+        config=config,
+        embedding_api_url=embedding_api_url,
+        embedding_model=embedding_model,
+    )
     return chunker.chunk(text, document_id)
 
 
-def parse_and_chunk(
-    input_path: Path,
-    strategy: ChunkingStrategy = ChunkingStrategy.SEMANTIC,
-    chunk_size: int = 500,
-    chunk_overlap: int = 50,
-    skip_vlm: bool = False,
-    skip_docling: bool = False,
-    verbose: bool = False
+def load_parsed_files(
+    parsed_dir: Path,
+    breakpoint_type: str = "percentile",
+    breakpoint_threshold: float = 95.0,
+    min_chunk_size: Optional[int] = None,
+    embedding_api_url: str = "http://localhost:8001/embeddings",
+    embedding_model: str = "BAAI/bge-m3",
 ) -> dict[str, list[Chunk]]:
-    """Parse document and chunk the results.
-
-    Args:
-        input_path: Path to input file (PDF, image, HWP)
-        strategy: Chunking strategy
-        chunk_size: Target chunk size
-        chunk_overlap: Overlap between chunks
-        skip_vlm: Skip VLM parser
-        skip_docling: Skip Docling parser
-        verbose: Print verbose output
-
-    Returns:
-        Dictionary mapping parser name to list of chunks
-    """
-    file_format = detect_file_format(input_path)
-    input_bytes = input_path.read_bytes()
-
-    print(f"Input: {input_path}")
-    print(f"Format: {file_format.value.upper()}")
-    print(f"Size: {len(input_bytes) / 1024:.1f} KB")
-    print()
-
-    results = {}
-    parse_results = {}
-
-    # HWP preprocessing
-    hwp_images = None
-    if file_format in [FileFormat.HWP, FileFormat.HWPX]:
-        print("Converting HWP to images...")
-        hwp_images = convert_hwp_to_images(input_path)
-        if not hwp_images:
-            print("Error: HWP conversion failed")
-            return {}
-
-    # Parse with each parser
-    if file_format == FileFormat.PDF:
-        # PDF: All parsers
-        if not skip_vlm:
-            try:
-                parse_results["VLM"] = test_vlm_parser(input_bytes, verbose, FileFormat.PDF)
-            except Exception as e:
-                print(f"VLM Parser error: {e}")
-
-        try:
-            parse_results["OCR-Text"] = test_ocr_text_parser(input_bytes, verbose)
-        except Exception as e:
-            print(f"OCR-Text Parser error: {e}")
-
-        if not skip_docling:
-            try:
-                parse_results["OCR-Image"] = test_ocr_image_parser(input_bytes, verbose)
-            except Exception as e:
-                print(f"OCR-Image Parser error: {e}")
-
-    elif file_format == FileFormat.IMAGE:
-        # Image: VLM only
-        if skip_vlm:
-            print("Error: Image input requires VLM parser")
-            return {}
-
-        try:
-            parse_results["VLM"] = test_vlm_parser(input_bytes, verbose, FileFormat.IMAGE)
-        except Exception as e:
-            print(f"VLM Parser error: {e}")
-
-    elif file_format in [FileFormat.HWP, FileFormat.HWPX]:
-        # HWP: VLM only (via converted images)
-        if skip_vlm:
-            print("Error: HWP input requires VLM parser")
-            return {}
-
-        try:
-            parse_results["VLM"] = test_vlm_parser(
-                input_bytes, verbose, file_format, pre_converted_images=hwp_images
-            )
-        except Exception as e:
-            print(f"VLM Parser error: {e}")
-
-    # Chunk each parser's output
-    print()
-    print("=" * 60)
-    print("Chunking Results")
-    print("=" * 60)
-
-    for parser_name, parse_result in parse_results.items():
-        if not parse_result.get("success"):
-            print(f"{parser_name}: SKIP (parsing failed)")
-            continue
-
-        content = parse_result.get("content", "")
-        if not content:
-            print(f"{parser_name}: SKIP (no content)")
-            continue
-
-        # Chunk the content
-        chunks = chunk_text(
-            content,
-            strategy=strategy,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            document_id=f"{parser_name.lower()}"
-        )
-
-        results[parser_name] = chunks
-        print(f"{parser_name}: {len(chunks)} chunks (avg {sum(c.length for c in chunks) // max(len(chunks), 1)} chars)")
-
-    return results
-
-
-def load_parsed_files(parsed_dir: Path) -> dict[str, list[Chunk]]:
     """Load pre-parsed files from a directory and chunk them.
 
     Expected file naming:
@@ -253,6 +127,11 @@ def load_parsed_files(parsed_dir: Path) -> dict[str, list[Chunk]]:
 
     Args:
         parsed_dir: Directory containing parsed output files
+        breakpoint_type: Type of breakpoint detection
+        breakpoint_threshold: Threshold amount for breakpoint detection
+        min_chunk_size: Minimum chunk size (optional)
+        embedding_api_url: API URL for embeddings
+        embedding_model: Model name for embeddings
 
     Returns:
         Dictionary mapping parser name to list of chunks
@@ -260,7 +139,14 @@ def load_parsed_files(parsed_dir: Path) -> dict[str, list[Chunk]]:
     results = {}
 
     # Map filename patterns to parser names
+    # Support both old and new naming conventions
     patterns = {
+        # New naming convention
+        "image_advanced": "Image-Advanced",
+        "image_baseline": "Image-Baseline",
+        "text_advanced": "Text-Advanced",
+        "text_baseline": "Text-Baseline",
+        # Old naming convention (for compatibility)
         "vlm": "VLM",
         "ocr-text": "OCR-Text",
         "ocr-image": "OCR-Image",
@@ -274,7 +160,15 @@ def load_parsed_files(parsed_dir: Path) -> dict[str, list[Chunk]]:
             file_path = parsed_dir / f"{pattern}_output{ext}"
             if file_path.exists():
                 content = file_path.read_text(encoding="utf-8")
-                chunks = chunk_text(content, document_id=pattern)
+                chunks = chunk_text(
+                    content,
+                    breakpoint_type=breakpoint_type,
+                    breakpoint_threshold=breakpoint_threshold,
+                    min_chunk_size=min_chunk_size,
+                    embedding_api_url=embedding_api_url,
+                    embedding_model=embedding_model,
+                    document_id=pattern,
+                )
                 results[parser_name] = chunks
                 print(f"Loaded {parser_name}: {len(chunks)} chunks from {file_path.name}")
                 break
@@ -475,16 +369,29 @@ def scan_results_folders(results_dir: Path = Path("results")) -> list[dict]:
             print(f"⚠️ {test_id}: evaluation.json 없음 (파싱 먼저 실행 필요)")
             continue
 
-        # Find parsed output files (including TwoStage parsers)
+        # Find parsed output files (both old and new naming conventions)
         parsers = []
-        for pattern in ["vlm", "ocr-text", "ocr-image", "twostage-text", "twostage-image"]:
+        parser_patterns = [
+            # New naming convention
+            ("image_advanced", "Image-Advanced"),
+            ("image_baseline", "Image-Baseline"),
+            ("text_advanced", "Text-Advanced"),
+            ("text_baseline", "Text-Baseline"),
+            # Old naming convention
+            ("vlm", "VLM"),
+            ("ocr-text", "OCR-Text"),
+            ("ocr-image", "OCR-Image"),
+            ("twostage-text", "TwoStage-Text"),
+            ("twostage-image", "TwoStage-Image"),
+        ]
+        for pattern, display_name in parser_patterns:
             for ext in [".txt", ".md"]:
                 output_file = folder / f"{pattern}_output{ext}"
                 if output_file.exists():
                     content = output_file.read_text(encoding="utf-8")
                     if len(content.strip()) > 0:
                         parsers.append({
-                            "name": pattern.upper().replace("-", "_"),
+                            "name": display_name,
                             "file": output_file,
                             "content_length": len(content)
                         })
@@ -504,10 +411,11 @@ def scan_results_folders(results_dir: Path = Path("results")) -> list[dict]:
 
 def run_single_chunking_test(
     test_folder: Path,
-    strategy: ChunkingStrategy = ChunkingStrategy.SEMANTIC,
-    chunk_size: int = 500,
-    chunk_overlap: int = 50,
-    semantic_threshold: float = 0.9,
+    breakpoint_type: str = "percentile",
+    breakpoint_threshold: float = 95.0,
+    min_chunk_size: Optional[int] = None,
+    embedding_api_url: str = "http://localhost:8001/embeddings",
+    embedding_model: str = "BAAI/bge-m3",
     embedding_client: EmbeddingClient | MockEmbeddingClient | None = None,
     threshold_k: float = 0.8,
     graph_type: str = "incomplete",
@@ -526,8 +434,14 @@ def run_single_chunking_test(
     # Load parsed files
     chunk_results = {}
 
-    # Include TwoStage parsers in the pattern list
+    # Support both old and new naming conventions
     parser_patterns = [
+        # New naming convention
+        ("image_advanced", "Image-Advanced"),
+        ("image_baseline", "Image-Baseline"),
+        ("text_advanced", "Text-Advanced"),
+        ("text_baseline", "Text-Baseline"),
+        # Old naming convention
         ("vlm", "VLM"),
         ("ocr-text", "OCR-Text"),
         ("ocr-image", "OCR-Image"),
@@ -543,10 +457,11 @@ def run_single_chunking_test(
                 if len(content.strip()) > 100:  # Minimum content length
                     chunks = chunk_text(
                         content,
-                        strategy=strategy,
-                        chunk_size=chunk_size,
-                        chunk_overlap=chunk_overlap,
-                        semantic_threshold=semantic_threshold,
+                        breakpoint_type=breakpoint_type,
+                        breakpoint_threshold=breakpoint_threshold,
+                        min_chunk_size=min_chunk_size,
+                        embedding_api_url=embedding_api_url,
+                        embedding_model=embedding_model,
                         document_id=pattern
                     )
                     chunk_results[parser_name] = chunks
@@ -572,11 +487,11 @@ def run_single_chunking_test(
 
 def run_all_chunking_tests(
     results_dir: Path = Path("results"),
-    strategy: str = "semantic",
-    chunk_size: int = 500,
-    chunk_overlap: int = 50,
-    semantic_threshold: float = 0.9,
-    embedding_model: str = "jhgan/ko-sroberta-multitask",
+    breakpoint_type: str = "percentile",
+    breakpoint_threshold: float = 95.0,
+    min_chunk_size: Optional[int] = None,
+    embedding_model: str = "BAAI/bge-m3",
+    embedding_api_url: str = "http://localhost:8001/embeddings",
     use_mock: bool = False,
     threshold_k: float = 0.8,
     graph_type: str = "incomplete",
@@ -600,9 +515,10 @@ def run_all_chunking_tests(
     print("=" * 60)
     print(f"📁 결과 폴더: {results_dir}")
     print(f"📊 테스트 수: {len(test_folders)}")
-    print(f"📐 Strategy: {strategy}")
-    print(f"📏 Chunk Size: {chunk_size}, Overlap: {chunk_overlap}")
-    print(f"🎯 Semantic Threshold: {semantic_threshold}")
+    print(f"📐 Breakpoint Type: {breakpoint_type}")
+    print(f"🎯 Breakpoint Threshold: {breakpoint_threshold}")
+    if min_chunk_size:
+        print(f"📏 Min Chunk Size: {min_chunk_size}")
     print()
 
     for info in test_folders:
@@ -610,23 +526,29 @@ def run_all_chunking_tests(
         print(f"  - {info['test_id']}: {', '.join(parser_names)}")
 
     # Create embedding client
-    embedding_client = create_embedding_client(model=embedding_model, use_mock=use_mock)
+    embedding_client = create_embedding_client(
+        model=embedding_model,
+        use_mock=use_mock,
+        api_url=embedding_api_url if embedding_api_url else None
+    )
     if use_mock:
         print("\n⚠️ MockEmbeddingClient 사용 (단어 기반 근사값)")
+    elif embedding_api_url:
+        print(f"\n🔤 Embedding API: {embedding_api_url}")
+        print(f"   Model: {embedding_model}")
     else:
-        print(f"\n🔤 Embedding model: {embedding_model}")
+        print(f"\n🔤 Local Embedding model: {embedding_model}")
 
     all_results = {}
-    strat = ChunkingStrategy(strategy)
 
     config = {
-        "strategy": strategy,
-        "chunk_size": chunk_size,
-        "chunk_overlap": chunk_overlap,
-        "semantic_threshold": semantic_threshold,
+        "breakpoint_type": breakpoint_type,
+        "breakpoint_threshold": breakpoint_threshold,
+        "min_chunk_size": min_chunk_size,
         "graph_type": graph_type,
         "threshold_k": threshold_k,
         "embedding_model": embedding_model,
+        "embedding_api_url": embedding_api_url,
         "use_mock": use_mock,
     }
 
@@ -641,10 +563,11 @@ def run_all_chunking_tests(
 
         result = run_single_chunking_test(
             test_folder=folder,
-            strategy=strat,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            semantic_threshold=semantic_threshold,
+            breakpoint_type=breakpoint_type,
+            breakpoint_threshold=breakpoint_threshold,
+            min_chunk_size=min_chunk_size,
+            embedding_api_url=embedding_api_url,
+            embedding_model=embedding_model,
             embedding_client=embedding_client,
             threshold_k=threshold_k,
             graph_type=graph_type,
@@ -697,6 +620,12 @@ Metrics (Semantic Distance based):
   BC (Boundary Clarity):  Higher is better - chunks are semantically independent
   CS (Chunk Stickiness):  Lower is better - less semantic similarity between chunks
 
+Breakpoint Types:
+  percentile:         Use percentile of distances (default, threshold ~95)
+  standard_deviation: Use standard deviations above mean (threshold ~3)
+  interquartile:      Use interquartile range (threshold ~1.5)
+  gradient:           Use gradient of distances (threshold ~95)
+
 Examples:
   # 전체 테스트 (results/ 폴더의 모든 파싱 결과)
   python -m src.eval_chunking --all
@@ -704,8 +633,8 @@ Examples:
   # 특정 테스트 폴더
   python -m src.eval_chunking --parsed-dir results/test_1/
 
-  # 새 파일 파싱 후 청킹
-  python -m src.eval_chunking --input data/test.pdf --use-mock
+  # 다른 breakpoint 설정
+  python -m src.eval_chunking --all --breakpoint-type standard_deviation --breakpoint-threshold 3.0
         """
     )
 
@@ -715,11 +644,6 @@ Examples:
         "--all", "-a",
         action="store_true",
         help="results/ 폴더의 모든 test_* 결과 청킹 테스트"
-    )
-    input_group.add_argument(
-        "--input", "-i",
-        type=Path,
-        help="Input file (PDF, image, HWP/HWPX)"
     )
     input_group.add_argument(
         "--parsed-dir",
@@ -744,58 +668,39 @@ Examples:
         "--output-dir", "-o",
         type=Path,
         default=None,
-        help="Output directory for results (--input 모드 전용)"
+        help="Output directory for results"
     )
 
-    # Chunking options
+    # Semantic chunking options
     parser.add_argument(
-        "--strategy",
-        choices=["fixed", "recursive_character", "semantic", "hierarchical"],
-        default="semantic",
-        help="Chunking strategy (default: semantic)"
+        "--breakpoint-type",
+        choices=["percentile", "standard_deviation", "interquartile", "gradient"],
+        default="percentile",
+        help="Breakpoint detection type (default: percentile)"
     )
     parser.add_argument(
-        "--strategies",
-        type=str,
-        default=None,
-        help="Compare multiple strategies (comma-separated: fixed,recursive_character,semantic)"
-    )
-    parser.add_argument(
-        "--chunk-size",
-        type=int,
-        default=500,
-        help="Target chunk size in characters (default: 500)"
-    )
-    parser.add_argument(
-        "--chunk-overlap",
-        type=int,
-        default=50,
-        help="Overlap between chunks (default: 50)"
-    )
-    parser.add_argument(
-        "--semantic-threshold",
+        "--breakpoint-threshold",
         type=float,
-        default=0.9,
-        help="Semantic chunker breakpoint threshold (default: 0.9)"
-    )
-
-    # Parser options
-    parser.add_argument(
-        "--skip-vlm",
-        action="store_true",
-        help="Skip VLM parser"
+        default=95.0,
+        help="Breakpoint threshold amount (default: 95.0 for percentile)"
     )
     parser.add_argument(
-        "--skip-docling",
-        action="store_true",
-        help="Skip Docling (OCR-Image) parser"
+        "--min-chunk-size",
+        type=int,
+        default=None,
+        help="Minimum chunk size in characters (optional)"
     )
 
     # Embedding model options
     parser.add_argument(
         "--embedding-model",
-        default="jhgan/ko-sroberta-multitask",
-        help="Sentence transformer model for embeddings (default: jhgan/ko-sroberta-multitask)"
+        default="BAAI/bge-m3",
+        help="Model name for embeddings (default: BAAI/bge-m3)"
+    )
+    parser.add_argument(
+        "--embedding-api-url",
+        default="http://localhost:8001/embeddings",
+        help="Embedding API URL (Infinity/OpenAI compatible). Set to empty string to use local model."
     )
     parser.add_argument(
         "--use-mock",
@@ -835,11 +740,11 @@ Examples:
     if args.all:
         run_all_chunking_tests(
             results_dir=args.results_dir,
-            strategy=args.strategy,
-            chunk_size=args.chunk_size,
-            chunk_overlap=args.chunk_overlap,
-            semantic_threshold=args.semantic_threshold,
+            breakpoint_type=args.breakpoint_type,
+            breakpoint_threshold=args.breakpoint_threshold,
+            min_chunk_size=args.min_chunk_size,
             embedding_model=args.embedding_model,
+            embedding_api_url=args.embedding_api_url,
             use_mock=args.use_mock,
             threshold_k=args.threshold_k,
             graph_type=args.graph_type,
@@ -859,31 +764,21 @@ Examples:
     # Get chunk results
     chunk_results = {}
 
-    if args.input:
-        # Parse and chunk from input file
-        if not args.input.exists():
-            print(f"Error: Input file not found: {args.input}")
-            sys.exit(1)
-
-        strategy = ChunkingStrategy(args.strategy)
-        chunk_results = parse_and_chunk(
-            args.input,
-            strategy=strategy,
-            chunk_size=args.chunk_size,
-            chunk_overlap=args.chunk_overlap,
-            skip_vlm=args.skip_vlm,
-            skip_docling=args.skip_docling,
-            verbose=args.verbose
-        )
-
-    elif args.parsed_dir:
+    if args.parsed_dir:
         # Load from pre-parsed directory
         if not args.parsed_dir.exists():
             print(f"Error: Parsed directory not found: {args.parsed_dir}")
             sys.exit(1)
 
         print(f"Loading parsed files from: {args.parsed_dir}")
-        chunk_results = load_parsed_files(args.parsed_dir)
+        chunk_results = load_parsed_files(
+            args.parsed_dir,
+            breakpoint_type=args.breakpoint_type,
+            breakpoint_threshold=args.breakpoint_threshold,
+            min_chunk_size=args.min_chunk_size,
+            embedding_api_url=args.embedding_api_url,
+            embedding_model=args.embedding_model,
+        )
 
     elif args.parsed_files:
         # Load from specific files
@@ -895,36 +790,17 @@ Examples:
             parser_name = file_path.stem.replace("_output", "").upper()
             content = file_path.read_text(encoding="utf-8")
 
-            # 다중 전략 비교 모드
-            if args.strategies:
-                strategies = [s.strip() for s in args.strategies.split(",")]
-                for strat_name in strategies:
-                    try:
-                        strat = ChunkingStrategy(strat_name)
-                        chunks = chunk_text(
-                            content,
-                            strategy=strat,
-                            chunk_size=args.chunk_size,
-                            chunk_overlap=args.chunk_overlap,
-                            semantic_threshold=args.semantic_threshold,
-                            document_id=f"{parser_name.lower()}_{strat_name}"
-                        )
-                        result_name = f"{parser_name}_{strat_name}"
-                        chunk_results[result_name] = chunks
-                        print(f"Loaded {result_name}: {len(chunks)} chunks")
-                    except ValueError:
-                        print(f"Warning: Invalid strategy '{strat_name}'")
-            else:
-                chunks = chunk_text(
-                    content,
-                    strategy=ChunkingStrategy(args.strategy),
-                    chunk_size=args.chunk_size,
-                    chunk_overlap=args.chunk_overlap,
-                    semantic_threshold=args.semantic_threshold,
-                    document_id=parser_name.lower()
-                )
-                chunk_results[parser_name] = chunks
-                print(f"Loaded {parser_name}: {len(chunks)} chunks")
+            chunks = chunk_text(
+                content,
+                breakpoint_type=args.breakpoint_type,
+                breakpoint_threshold=args.breakpoint_threshold,
+                min_chunk_size=args.min_chunk_size,
+                embedding_api_url=args.embedding_api_url,
+                embedding_model=args.embedding_model,
+                document_id=parser_name.lower()
+            )
+            chunk_results[parser_name] = chunks
+            print(f"Loaded {parser_name}: {len(chunks)} chunks")
 
     if not chunk_results:
         print("Error: No chunks to evaluate")
@@ -933,13 +809,17 @@ Examples:
     # Create embedding client
     embedding_client = create_embedding_client(
         model=args.embedding_model,
-        use_mock=args.use_mock
+        use_mock=args.use_mock,
+        api_url=args.embedding_api_url if args.embedding_api_url else None
     )
 
     if args.use_mock:
         print("\nNote: Using MockEmbeddingClient (word-based heuristic)")
+    elif args.embedding_api_url:
+        print(f"\n🔤 Embedding API: {args.embedding_api_url}")
+        print(f"   Model: {args.embedding_model}")
     else:
-        print(f"\n🔤 Embedding model: {args.embedding_model}")
+        print(f"\n🔤 Local Embedding model: {args.embedding_model}")
 
     # Evaluate
     evaluation = evaluate_all(
@@ -958,13 +838,13 @@ Examples:
     output_dir = args.output_dir or args.parsed_dir
     if output_dir:
         config = {
-            "strategy": args.strategy,
-            "chunk_size": args.chunk_size,
-            "chunk_overlap": args.chunk_overlap,
-            "semantic_threshold": args.semantic_threshold,
+            "breakpoint_type": args.breakpoint_type,
+            "breakpoint_threshold": args.breakpoint_threshold,
+            "min_chunk_size": args.min_chunk_size,
             "graph_type": args.graph_type,
             "threshold_k": args.threshold_k,
             "embedding_model": args.embedding_model,
+            "embedding_api_url": args.embedding_api_url,
             "use_mock": args.use_mock,
         }
 

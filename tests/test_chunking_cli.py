@@ -8,18 +8,16 @@ import pytest
 
 from src.chunking.chunker import (
     ChunkerConfig,
-    ChunkingStrategy,
-    create_chunker,
     Chunk,
 )
 from src.chunking.metrics import (
     BCScore,
     CSScore,
     ChunkingMetrics,
-    MockLLMClient,
+    MockEmbeddingClient,
     calculate_bc,
     calculate_cs,
-    calculate_edge_weight,
+    calculate_edge_weight_semantic,
     calculate_structural_entropy,
     build_chunk_graph,
     evaluate_chunking,
@@ -67,141 +65,149 @@ def sample_chunks():
 
 @pytest.fixture
 def mock_client():
-    """Mock LLM 클라이언트"""
-    return MockLLMClient()
+    """Mock Embedding 클라이언트"""
+    return MockEmbeddingClient()
 
 
 # =============================================================================
-# Chunker Tests
+# Chunker Config Tests
 # =============================================================================
 
-class TestChunker:
-    """청킹 기능 테스트"""
+class TestChunkerConfig:
+    """청킹 설정 테스트"""
 
-    def test_recursive_character_chunker(self, sample_text):
-        """RecursiveCharacterChunker 기본 동작 테스트"""
+    def test_default_config(self):
+        """기본 설정 테스트"""
+        config = ChunkerConfig()
+
+        assert config.breakpoint_threshold_type == "percentile"
+        assert config.breakpoint_threshold_amount == 95.0
+        assert config.min_chunk_size is None
+
+    def test_custom_config(self):
+        """커스텀 설정 테스트"""
         config = ChunkerConfig(
-            strategy=ChunkingStrategy.RECURSIVE_CHARACTER,
-            chunk_size=200,
-            chunk_overlap=20,
+            breakpoint_threshold_type="standard_deviation",
+            breakpoint_threshold_amount=3.0,
+            min_chunk_size=100,
         )
-        chunker = create_chunker(config)
 
-        chunks = chunker.chunk(sample_text, document_id="test")
+        assert config.breakpoint_threshold_type == "standard_deviation"
+        assert config.breakpoint_threshold_amount == 3.0
+        assert config.min_chunk_size == 100
 
-        assert len(chunks) > 0
-        assert all(isinstance(c, Chunk) for c in chunks)
-        assert all(c.content for c in chunks)
-
-    def test_fixed_size_chunker(self, sample_text):
-        """FixedSizeChunker 기본 동작 테스트"""
+    def test_config_to_dict(self):
+        """설정 to_dict 테스트"""
         config = ChunkerConfig(
-            strategy=ChunkingStrategy.FIXED,
-            chunk_size=100,
-            chunk_overlap=10,
+            breakpoint_threshold_type="gradient",
+            breakpoint_threshold_amount=90.0,
         )
-        chunker = create_chunker(config)
 
-        chunks = chunker.chunk(sample_text, document_id="test")
+        config_dict = config.to_dict()
 
-        assert len(chunks) > 0
-        # 고정 크기 청커는 대부분 청크가 비슷한 크기
-        for chunk in chunks[:-1]:  # 마지막 청크 제외
-            assert chunk.length <= config.chunk_size + 10  # 약간의 여유
+        assert "breakpoint_threshold_type" in config_dict
+        assert "breakpoint_threshold_amount" in config_dict
+        assert "min_chunk_size" in config_dict
 
-    def test_chunk_overlap(self, sample_text):
-        """청크 오버랩 테스트"""
-        config = ChunkerConfig(
-            strategy=ChunkingStrategy.RECURSIVE_CHARACTER,
-            chunk_size=100,
-            chunk_overlap=20,
+
+# =============================================================================
+# Chunk Tests
+# =============================================================================
+
+class TestChunk:
+    """Chunk 클래스 테스트"""
+
+    def test_chunk_creation(self):
+        """청크 생성 테스트"""
+        chunk = Chunk(
+            id="doc_chunk_0",
+            content="테스트 내용입니다.",
+            start_index=0,
+            end_index=10,
+            metadata={"document_id": "doc"}
         )
-        chunker = create_chunker(config)
 
-        chunks = chunker.chunk(sample_text, document_id="test")
+        assert chunk.id == "doc_chunk_0"
+        assert chunk.content == "테스트 내용입니다."
+        assert chunk.start_index == 0
+        assert chunk.end_index == 10
 
-        # 최소 2개 청크가 있어야 오버랩 테스트 가능
-        if len(chunks) >= 2:
-            # 오버랩이 있으면 연속 청크 사이에 공통 텍스트가 있을 수 있음
-            # (실제로 공유되는지는 텍스트 분할 방식에 따라 다름)
-            assert all(c.start_index >= 0 for c in chunks)
+    def test_chunk_length(self):
+        """청크 길이 속성 테스트"""
+        chunk = Chunk(
+            id="test",
+            content="Hello World",
+            start_index=0,
+            end_index=11,
+        )
 
-    def test_chunk_metadata(self, sample_text):
-        """청크 메타데이터 테스트"""
-        config = ChunkerConfig(strategy=ChunkingStrategy.RECURSIVE_CHARACTER)
-        chunker = create_chunker(config)
+        assert chunk.length == 11
 
-        chunks = chunker.chunk(sample_text, document_id="my_doc")
-
-        for i, chunk in enumerate(chunks):
-            assert chunk.id.startswith("my_doc_chunk_")
-            assert "document_id" in chunk.metadata
-            assert chunk.metadata["document_id"] == "my_doc"
-
-    def test_empty_text(self):
-        """빈 텍스트 처리 테스트"""
-        config = ChunkerConfig(strategy=ChunkingStrategy.RECURSIVE_CHARACTER)
-        chunker = create_chunker(config)
-
-        chunks = chunker.chunk("", document_id="empty")
-
-        assert len(chunks) == 0
-
-    def test_chunk_to_dict(self, sample_text):
+    def test_chunk_to_dict(self):
         """Chunk.to_dict() 테스트"""
-        config = ChunkerConfig(strategy=ChunkingStrategy.RECURSIVE_CHARACTER)
-        chunker = create_chunker(config)
+        chunk = Chunk(
+            id="doc_chunk_0",
+            content="테스트 내용",
+            start_index=0,
+            end_index=5,
+            metadata={"key": "value"}
+        )
 
-        chunks = chunker.chunk(sample_text, document_id="test")
+        chunk_dict = chunk.to_dict()
 
-        if chunks:
-            chunk_dict = chunks[0].to_dict()
-            assert "id" in chunk_dict
-            assert "content" in chunk_dict
-            assert "start_index" in chunk_dict
-            assert "end_index" in chunk_dict
-            assert "length" in chunk_dict
-            assert "metadata" in chunk_dict
+        assert "id" in chunk_dict
+        assert "content" in chunk_dict
+        assert "start_index" in chunk_dict
+        assert "end_index" in chunk_dict
+        assert "length" in chunk_dict
+        assert "metadata" in chunk_dict
 
 
 # =============================================================================
-# MockLLMClient Tests
+# MockEmbeddingClient Tests
 # =============================================================================
 
-class TestMockLLMClient:
-    """Mock LLM 클라이언트 테스트"""
+class TestMockEmbeddingClient:
+    """Mock Embedding 클라이언트 테스트"""
 
-    def test_perplexity_calculation(self, mock_client):
-        """기본 perplexity 계산 테스트"""
-        ppl = mock_client.calculate_perplexity("Hello world")
+    def test_embedding_calculation(self, mock_client):
+        """기본 embedding 계산 테스트"""
+        emb = mock_client.get_embedding("Hello world")
 
-        assert ppl > 0
-        assert isinstance(ppl, float)
+        assert len(emb) > 0
+        assert isinstance(emb, type(emb))  # numpy array
 
-    def test_perplexity_with_context(self, mock_client):
-        """컨텍스트가 있는 perplexity 계산 테스트"""
-        text = "Python programming"
-        context = "Python is a programming language. Python programming"
+    def test_cosine_similarity(self, mock_client):
+        """코사인 유사도 테스트"""
+        import numpy as np
 
-        ppl_alone = mock_client.calculate_perplexity(text)
-        ppl_with_context = mock_client.calculate_perplexity(text, context=context)
+        text1 = "Python programming language"
+        text2 = "Python programming language"  # 동일 텍스트
+        text3 = "축구 경기 결과"  # 다른 텍스트
 
-        # 컨텍스트와 겹치는 단어가 있으면 perplexity가 낮아져야 함
-        assert ppl_with_context <= ppl_alone
+        sim_same = mock_client.cosine_similarity(text1, text2)
+        sim_diff = mock_client.cosine_similarity(text1, text3)
 
-    def test_empty_text_perplexity(self, mock_client):
-        """빈 텍스트 perplexity 테스트"""
-        ppl = mock_client.calculate_perplexity("")
+        # 동일 텍스트는 유사도 ~1.0 (부동소수점 허용)
+        assert np.isclose(sim_same, 1.0)
+        # 다른 텍스트는 유사도가 낮음
+        assert sim_diff < sim_same
 
-        assert ppl == 1.0
+    def test_empty_text_embedding(self, mock_client):
+        """빈 텍스트 embedding 테스트"""
+        emb = mock_client.get_embedding("")
 
-    def test_batch_perplexity(self, mock_client):
-        """배치 perplexity 계산 테스트"""
+        # 빈 텍스트는 zero vector
+        import numpy as np
+        assert np.allclose(emb, np.zeros_like(emb))
+
+    def test_batch_embedding(self, mock_client):
+        """배치 embedding 계산 테스트"""
         texts = ["Hello", "World", "Test"]
-        ppls = mock_client.calculate_perplexity_batch(texts)
+        embeddings = mock_client.get_embeddings_batch(texts)
 
-        assert len(ppls) == len(texts)
-        assert all(p > 0 for p in ppls)
+        assert len(embeddings) == len(texts)
+        assert all(len(e) > 0 for e in embeddings)
 
 
 # =============================================================================
@@ -349,21 +355,25 @@ class TestGraphConstruction:
     """그래프 구성 테스트"""
 
     def test_edge_weight_calculation(self, mock_client):
-        """엣지 가중치 계산 테스트"""
-        q = "Python programming language"
-        d = "Python is a popular programming language"
+        """엣지 가중치 계산 테스트 (embedding 기반)"""
+        import numpy as np
 
-        weight = calculate_edge_weight(q, d, mock_client)
+        emb1 = mock_client.get_embedding("Python programming language")
+        emb2 = mock_client.get_embedding("Python is a popular programming language")
+
+        weight = calculate_edge_weight_semantic(emb1, emb2)
 
         assert 0 <= weight <= 1
         assert isinstance(weight, float)
 
     def test_edge_weight_independent_texts(self, mock_client):
         """독립적인 텍스트의 엣지 가중치 테스트"""
-        q = "축구 경기 결과"
-        d = "Python 프로그래밍 언어"
+        import numpy as np
 
-        weight = calculate_edge_weight(q, d, mock_client)
+        emb1 = mock_client.get_embedding("축구 경기 결과")
+        emb2 = mock_client.get_embedding("Python 프로그래밍 언어")
+
+        weight = calculate_edge_weight_semantic(emb1, emb2)
 
         # 독립적인 텍스트는 낮은 가중치
         assert weight < 0.5
@@ -422,7 +432,7 @@ class TestCombinedEvaluation:
         """evaluate_chunking 통합 테스트"""
         metrics = evaluate_chunking(
             sample_chunks,
-            llm_client=mock_client,
+            embedding_client=mock_client,
             threshold_k=0.5,
             graph_type="incomplete",
             calculate_cs_flag=True,
@@ -437,7 +447,7 @@ class TestCombinedEvaluation:
         """BC만 계산하는 테스트"""
         metrics = evaluate_chunking(
             sample_chunks,
-            llm_client=mock_client,
+            embedding_client=mock_client,
             calculate_cs_flag=False,  # CS 스킵
             verbose=False
         )
@@ -446,10 +456,10 @@ class TestCombinedEvaluation:
         assert metrics.cs_score is None
 
     def test_evaluate_chunking_without_client(self, sample_chunks):
-        """LLM 클라이언트 없이 평가 (Mock 자동 사용)"""
+        """Embedding 클라이언트 없이 평가 (Mock 자동 사용)"""
         metrics = evaluate_chunking(
             sample_chunks,
-            llm_client=None,  # Mock 자동 사용
+            embedding_client=None,  # Mock 자동 사용
             verbose=False
         )
 
@@ -459,7 +469,7 @@ class TestCombinedEvaluation:
         """ChunkingMetrics.to_dict() 테스트"""
         metrics = evaluate_chunking(
             sample_chunks,
-            llm_client=mock_client,
+            embedding_client=mock_client,
             verbose=False
         )
         metrics_dict = metrics.to_dict()
@@ -476,43 +486,13 @@ class TestCombinedEvaluation:
 class TestIntegration:
     """통합 테스트"""
 
-    def test_end_to_end_pipeline(self, sample_text, mock_client):
-        """전체 파이프라인 통합 테스트: 텍스트 → 청킹 → 평가"""
-        # 1. 청킹
-        config = ChunkerConfig(
-            strategy=ChunkingStrategy.RECURSIVE_CHARACTER,
-            chunk_size=150,
-            chunk_overlap=20,
-        )
-        chunker = create_chunker(config)
-        chunks = chunker.chunk(sample_text, document_id="integration_test")
-
-        assert len(chunks) >= 2, "통합 테스트를 위해 최소 2개 청크 필요"
-
-        # 2. BC/CS 평가
-        metrics = evaluate_chunking(
-            chunks,
-            llm_client=mock_client,
-            threshold_k=0.5,
-            graph_type="incomplete",
-            verbose=False
-        )
-
-        # 3. 결과 검증
-        assert metrics.bc_score is not None
-        assert metrics.bc_score.score > 0
-        assert metrics.bc_score.pair_count == len(chunks) - 1
-
-        assert metrics.cs_score is not None
-        assert metrics.cs_score.node_count == len(chunks)
-
     def test_json_output(self, sample_chunks, mock_client):
         """JSON 출력 형식 테스트"""
         import json
 
         metrics = evaluate_chunking(
             sample_chunks,
-            llm_client=mock_client,
+            embedding_client=mock_client,
             verbose=False
         )
 

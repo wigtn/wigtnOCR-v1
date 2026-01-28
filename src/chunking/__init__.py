@@ -2,22 +2,18 @@
 Semantic Chunking Module for VLM Document Parsing Evaluation
 
 This module provides:
-- Text chunking strategies (fixed, recursive, semantic, hierarchical)
+- Semantic text chunking using LangChain SemanticChunker
 - Label-free quality metrics (BC, CS) based on MoC paper (arXiv:2503.09600v2)
 - Embedding-based semantic distance calculation for BC/CS metrics
 """
 
 from .chunker import (
-    ChunkingStrategy,
     ChunkerConfig,
     Chunk,
-    TextChunker,
-    RecursiveCharacterChunker,
     SemanticChunker,
-    HierarchicalChunker,
-    FixedSizeChunker,
     create_chunker,
 )
+from .embeddings import APIEmbeddings
 from .metrics import (
     # Data classes
     BCScore,
@@ -47,15 +43,12 @@ from .dashboard_export import (
 
 __all__ = [
     # Chunker classes
-    "ChunkingStrategy",
     "ChunkerConfig",
     "Chunk",
-    "TextChunker",
-    "RecursiveCharacterChunker",
     "SemanticChunker",
-    "HierarchicalChunker",
-    "FixedSizeChunker",
     "create_chunker",
+    # Embeddings
+    "APIEmbeddings",
     # Metrics - Data classes
     "BCScore",
     "CSScore",
