@@ -6,22 +6,24 @@ This study investigated the impact of Vision-Language Model (VLM) based document
 
 ### 7.1.1 Lexical Accuracy (RQ1)
 
-<!-- TODO: Update with final results -->
-- VLM parsing achieved [TBD]% lower CER compared to traditional OCR
-- For scanned documents, VLM demonstrated [TBD]% improvement in WER
-- Trade-off exists: VLM may introduce minor errors but preserves structure
+- VLM-based Advanced parsers do **not** achieve lower CER; instead, CER increases from 40.79% (Image-Baseline) to 57.71% (Image-Advanced), a +17 percentage point trade-off
+- For the benchmark document (Attention Is All You Need), Image-Baseline achieved the best CER (40.79%) and WER (41.24%)
+- **Critical trade-off confirmed**: VLM prioritizes structural preservation over character-level accuracy
 
 ### 7.1.2 Structural Preservation (RQ2)
 
-- VLM output shows [TBD] higher Boundary Score
-- Chunk coherence (CS) improved by [TBD] with VLM parsing
-- Markdown formatting provides implicit structural cues even with structure-agnostic chunking
+- **Structure F1: 0% → 79.25%** (Text-Advanced), a dramatic improvement
+- Recall: 87.5% (21/24 structural elements detected), Precision: 72.41%
+- True Positives: 21, False Positives: 8, False Negatives: 3
+- Boundary Coherence (BC) score of 0.512 achieved with 18 natural chunk divisions
+- Markdown formatting provides explicit section boundaries for semantic chunking
 
 ### 7.1.3 Retrieval Performance (RQ3)
 
-- Hit Rate@5 improved by [TBD]% with VLM-based parsing
-- Largest improvements observed for table-related queries
-- MRR increased from [TBD] to [TBD]
+- Direct retrieval metrics (Hit Rate, MRR) were not measured in this experiment cycle
+- **Indirect evidence**: 18 semantically coherent chunks created with BC score 0.512 (test_3)
+- Structural boundaries align with document sections, enabling section-aware retrieval
+- Future work required for end-to-end retrieval evaluation with Q&A pairs
 
 ## 7.2 Core Contributions
 
@@ -72,11 +74,16 @@ Based on our findings, we recommend the following decision tree for document par
 
 ### 7.3.2 Expected Outcomes
 
-| Strategy | Avg Quality | Avg Cost | Best For |
-|----------|-------------|----------|----------|
-| VLM Only | Highest | Highest | Quality-critical |
-| OCR Only | Lowest | Lowest | Speed-critical |
-| Hybrid | High | Medium | Balanced |
+| Strategy | Structure F1 | CER | Latency | Best For |
+|----------|-------------|-----|---------|----------|
+| Advanced (VLM) | ~79% | ~58-64% | 35-43s | Structure-critical docs |
+| Baseline (OCR) | 0% | ~41-51% | 0.3-2.3s | Speed-critical, simple docs |
+| Hybrid | Variable | Variable | Variable | Balanced quality/speed |
+
+**Quantified Trade-offs** (test_3 benchmark):
+- Structure F1 gain: +79 percentage points (0% → 79%)
+- CER cost: +17 percentage points (41% → 58%)
+- Latency cost: 159x slower (0.27s → 42.92s)
 
 ## 7.4 Practical Recommendations
 

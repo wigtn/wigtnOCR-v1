@@ -17,15 +17,20 @@ We employ a multi-phase evaluation framework:
 
 ## Key Findings
 
-<!-- TODO: Fill in after experiments -->
-- **CER/WER Results**: [Pending experimental results]
-- **Retrieval Improvement**: [Pending experimental results]
-- **Structural Analysis**: [Pending experimental results]
+- **CER/WER Results**: Image-Baseline achieves the lowest CER (40.79%) for pure text extraction. However, VLM-based Advanced parsers prioritize structural preservation over character-level accuracy, resulting in CER increases of 13-24 percentage points.
+- **Structural Analysis**: Structure F1 improves dramatically from 0% (Baseline) to 79.25% (Text-Advanced), with Recall of 87.5% and Precision of 72.41%. Advanced parsers successfully detect 21 out of 24 structural elements (TP=21, FN=3).
+- **Trade-off Discovery**: A clear trade-off exists between lexical fidelity and structural preservation. Baseline parsers excel at character extraction but lose all structure. Advanced parsers preserve document hierarchy at the cost of some text accuracy.
+- **Hallucination Warning**: Korean scanned documents (test_1) showed extreme hallucination with CER of 536% when VLM attempted to "interpret" rather than transcribe content.
 
 ## Conclusion
 
-<!-- TODO: Fill in after experiments -->
-[Preliminary findings suggest that VLM-based parsing with structural markdown output improves retrieval accuracy by X% for documents with complex layouts. A hybrid parsing strategy is recommended.]
+Our findings demonstrate that **structural preservation is achievable** with VLM-based parsing (Structure F1: 0% → 79.25%), but comes with trade-offs in character-level accuracy. We recommend a **hybrid parsing strategy**:
+
+1. **For structure-critical documents** (tables, multi-column): Use Advanced parsers despite higher CER
+2. **For text-extraction tasks**: Use Image-Baseline for optimal CER (40.79%)
+3. **For Korean scanned documents**: Exercise caution with VLM to avoid hallucination
+
+The 159x latency increase (0.27s → 42.92s) for Advanced parsers is justified when document structure is essential for downstream RAG applications.
 
 ---
 

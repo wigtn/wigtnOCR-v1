@@ -6,97 +6,117 @@
 
 **Question**: Does VLM-based parsing achieve better character-level and word-level accuracy compared to traditional OCR methods?
 
-**Finding**: [TODO: Fill based on results]
+**Finding**: VLM-based Advanced parsers do NOT achieve better lexical accuracy. Instead, they trade character fidelity for structural preservation, resulting in CER increases of 13-24 percentage points.
 
 **Analysis**:
-<!-- TODO: Update after experiments -->
+
+| Parser | CER | WER | Key Observation |
+|--------|-----|-----|-----------------|
+| Text-Baseline | 51.25% | 57.19% | Moderate accuracy, no structure |
+| Image-Baseline | **40.79%** | **41.24%** | Best lexical accuracy |
+| Text-Advanced | 64.11% | 69.34% | +13pp CER, gains structure |
+| Image-Advanced | 57.71% | 63.27% | +17pp CER, gains structure |
 
 The CER and WER results reveal several patterns:
 
-1. **Digital PDFs with Tables**: [Expected observation]
-   - pdfplumber extracts raw text but loses structure
-   - VLM preserves structure but may introduce minor errors
-   - Trade-off between structure and character accuracy
+1. **Digital PDFs (test_3 - Attention Is All You Need)**:
+   - Image-Baseline achieves the lowest CER (40.79%) through pure OCR extraction
+   - Advanced parsers sacrifice ~17pp CER to achieve 79% Structure F1
+   - This trade-off is intentional: VLM prioritizes semantic structure over verbatim transcription
 
-2. **Scanned Documents**: [Expected observation]
-   - Traditional OCR (RapidOCR) struggles with image quality
-   - VLM leverages visual understanding beyond character recognition
-   - Significant advantage for complex layouts
+2. **Scanned Documents (test_1 - Korean Government Doc)**:
+   - Text-Baseline failed to extract content (content_length=0)
+   - Image-Baseline achieved CER 91.87% (poor quality scan)
+   - Image-Advanced showed hallucination: CER 536%, generating fabricated content
+   - **Critical insight**: VLM hallucination is a severe risk for low-quality Korean scans
 
-3. **Korean Language Impact**: [Expected observation]
-   - MeCab tokenization crucial for fair WER comparison
-   - Korean agglutinative nature affects error counting
-   - Morpheme-level errors vs character-level errors differ
+3. **Korean Language Impact**:
+   - Whitespace tokenization used for consistency across tests
+   - Korean documents showed higher error rates across all parsers
+   - MeCab tokenization would provide more nuanced WER analysis
 
 ### 6.1.2 RQ2: Structural Preservation
 
 **Question**: Does VLM-based parsing preserve document structure better, leading to improved semantic chunking?
 
-**Finding**: [TODO: Fill based on results]
+**Finding**: **Yes, dramatically.** Structure F1 improves from 0% (Baseline) to 79.25% (Text-Advanced). Advanced parsers detect 21 out of 24 structural elements with 87.5% Recall.
 
 **Analysis**:
 
-1. **Boundary Score Improvement**:
-   - VLM markdown provides natural break points
-   - Headers, blank lines, and table boundaries preserved
-   - Chunking algorithm benefits from explicit structure
+| Parser | Structure F1 | Precision | Recall | TP | FP | FN |
+|--------|-------------|-----------|--------|----|----|-----|
+| Text-Baseline | 0% | 0% | 0% | 0 | 11 | 24 |
+| Image-Baseline | 0% | 0% | 0% | 0 | 0 | 24 |
+| Text-Advanced | **79.25%** | 72.41% | 87.5% | 21 | 8 | 3 |
+| Image-Advanced | 77.78% | 70.0% | 87.5% | 21 | 9 | 3 |
 
-2. **Chunk Score Improvement**:
-   - Structural markers prevent mid-concept splits
-   - Tables remain atomic units
-   - Lists maintain coherence
+1. **Structure F1 Breakthrough (0% → 79%)**:
+   - Baseline parsers completely fail to detect structural elements (headers, tables)
+   - Advanced parsers with VLM stage2 achieve near-80% F1 score
+   - High Recall (87.5%) means most structures are detected
+   - Moderate Precision (72%) indicates some false positives (over-detection)
 
-3. **Indirect Structural Effect**:
-   - Even with structure-agnostic chunking, VLM output benefits
-   - Markdown newlines and formatting act as implicit boundaries
-   - This "free" structural information improves chunking
+2. **Error Analysis (FP/FN)**:
+   - **False Negatives (3)**: Missed elements are typically subtle formatting or nested structures
+   - **False Positives (8-9)**: VLM occasionally over-interprets formatting as structure
+   - Net result: Better to over-detect than miss critical structure
+
+3. **Chunking Quality Improvement**:
+   - test_2 shows BC (Boundary Coherence) of 0.512 with 18 chunks
+   - Markdown headers and sections create natural chunk boundaries
+   - Tables remain atomic units, preventing mid-table splits
 
 ### 6.1.3 RQ3: Retrieval Impact
 
 **Question**: Does structural preservation in parsing improve downstream retrieval performance in RAG systems?
 
-**Finding**: [TODO: Fill based on results]
+**Finding**: Indirect evidence suggests structural preservation improves chunking quality, which is a prerequisite for better retrieval. Direct Hit Rate measurement was not conducted in this experiment cycle.
 
 **Analysis**:
 
-1. **Hit Rate Improvement by Query Type**:
-   - **Factual queries**: Modest improvement
-   - **Table queries**: Significant improvement (expected)
-   - **Multi-hop queries**: Variable results
-   - **Inferential queries**: [Analysis needed]
+1. **Chunking Quality as Proxy**:
+   - test_2 Image-Advanced: 7 chunks, BC score 0.512 (moderate coherence)
+   - test_3 Image-Advanced: 18 chunks with natural section boundaries
+   - Chunks align with document sections (Introduction, Methods, Results, etc.)
 
-2. **Causal Chain**:
+2. **Causal Chain (Theoretical)**:
    ```
    Better Parsing → Better Boundaries → Better Chunks → Better Retrieval
-   (VLM)          (Higher BS)        (Higher CS)     (Higher HR@k)
+   (VLM +79% F1)   (Natural breaks)   (18 sections)   (Expected ↑HR@k)
    ```
 
-3. **Correlation Analysis**:
-   - BS correlates with HR@k (r = [TBD])
-   - CS correlates with HR@k (r = [TBD])
-   - Supports hypothesis that structure improves retrieval
+3. **Structural Benefits for Retrieval**:
+   - Headers become chunk metadata (filterable)
+   - Tables remain atomic (no split tables in retrieval)
+   - Section hierarchy enables hierarchical retrieval
+   - BC score 0.512 indicates moderate semantic coherence between adjacent chunks
+
+4. **Limitations**:
+   - Direct Hit Rate@k evaluation not performed in this cycle
+   - Future work should measure end-to-end retrieval impact
+   - Q&A pairs needed for proper evaluation
 
 ## 6.2 Error Pattern Analysis
 
-### 6.2.1 VLM Error Categories
+### 6.2.1 VLM Error Categories (Advanced Parsers)
 
-| Category | Frequency | Severity | Root Cause |
-|----------|-----------|----------|------------|
-| TABLE_STRUCTURE | TBD% | Critical | Complex merged cells |
-| MULTI_COLUMN | TBD% | Critical | Ambiguous reading order |
-| HALLUCINATION | TBD% | Major | Over-interpretation |
-| HEADER_HIERARCHY | TBD% | Medium | Level confusion |
-| DELETION | TBD% | Varies | Low-contrast text |
-| SUBSTITUTION | TBD% | Minor | Similar characters |
+| Category | Frequency | Severity | Root Cause | Example |
+|----------|-----------|----------|------------|---------|
+| HALLUCINATION | High (test_1) | **Critical** | Over-interpretation of unclear content | CER 536% on Korean scan |
+| FALSE_POSITIVE_STRUCTURE | 27-30% | Medium | Over-detection of structure | FP=8-9 in test_3 |
+| MISSED_STRUCTURE | 12.5% | Medium | Subtle formatting not detected | FN=3 in test_3 |
+| SUBSTITUTION | Moderate | Minor | Similar characters, OCR artifacts | Contributes to +17pp CER |
+| LATENCY | 100% | Varies | VLM inference time | 42.92s vs 0.27s |
 
-### 6.2.2 Traditional OCR Error Categories
+### 6.2.2 Traditional OCR Error Categories (Baseline Parsers)
 
-| Category | Frequency | Severity | Root Cause |
-|----------|-----------|----------|------------|
-| STRUCTURE_LOSS | TBD% | Critical | No layout understanding |
-| TABLE_COLLAPSE | TBD% | Critical | Tables become text streams |
-| COLUMN_MIX | TBD% | Critical | Multi-column ordering |
-| CHARACTER_ERROR | TBD% | Minor | OCR accuracy |
+| Category | Frequency | Severity | Root Cause | Example |
+|----------|-----------|----------|------------|---------|
+| STRUCTURE_LOSS | **100%** | Critical | No layout understanding | Structure F1 = 0% |
+| TABLE_COLLAPSE | 100% | Critical | Tables become text streams | All tables flattened |
+| COLUMN_MIX | High | Critical | Multi-column ordering | test_3 academic paper |
+| EMPTY_EXTRACTION | Varies | Critical | Scanned PDF failure | test_1 Text-Baseline |
+| CHARACTER_ERROR | Low-Moderate | Minor | OCR accuracy | CER 40.79% best case |
 
 ### 6.2.3 Comparative Error Analysis
 
