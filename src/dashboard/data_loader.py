@@ -241,7 +241,7 @@ def get_parsing_summary_df(data: Dict[str, Any]) -> pd.DataFrame:
     """
     Generate summary DataFrame for all parsing tests.
 
-    Columns: Test ID, Source, Parser, CER, WER, Latency, Status
+    Columns: Test ID, Source, Parser, CER, WER, Structure F1, Latency, Status
     """
     if "error" in data:
         return pd.DataFrame()
@@ -256,6 +256,7 @@ def get_parsing_summary_df(data: Dict[str, Any]) -> pd.DataFrame:
         for parser, metrics in parser_results.items():
             cer = metrics.get("cer")
             wer = metrics.get("wer")
+            structure_f1 = metrics.get("structure_f1")
 
             rows.append({
                 "Test ID": test_id,
@@ -265,6 +266,8 @@ def get_parsing_summary_df(data: Dict[str, Any]) -> pd.DataFrame:
                 "WER": wer if wer is not None else float("nan"),
                 "CER %": f"{cer*100:.1f}%" if cer is not None else "N/A",
                 "WER %": f"{wer*100:.1f}%" if wer is not None else "N/A",
+                "Structure F1": structure_f1 if structure_f1 is not None else float("nan"),
+                "Struct-F1 %": f"{structure_f1*100:.1f}%" if structure_f1 is not None else "N/A",
                 "Latency (s)": metrics.get("elapsed_time", 0),
                 "Content Length": metrics.get("content_length", 0),
                 "Success": "✓" if metrics.get("success", False) else "✗",
@@ -362,6 +365,7 @@ def get_test_detail_df(data: Dict[str, Any], test_id: str) -> pd.DataFrame:
             "Success": metrics.get("success", False),
             "CER": metrics.get("cer"),
             "WER": metrics.get("wer"),
+            "Structure F1": metrics.get("structure_f1"),
             "Latency (s)": metrics.get("elapsed_time", 0),
             "Content Length": metrics.get("content_length", 0),
         })

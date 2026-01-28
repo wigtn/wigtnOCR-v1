@@ -239,12 +239,12 @@ def create_thin_bar_chart(data: Dict, metric: str, title: str,
 
 def create_radar_chart(all_data: Dict) -> go.Figure:
     """파서별 성능 Radar Chart"""
-    metrics = ["WER", "CER", "Latency"]
+    metrics = ["WER", "CER", "Struct-F1", "Latency"]
     fig = go.Figure()
 
     for parser in PARSER_NAMES:
         values = []
-        for metric_key in ["wer", "cer", "elapsed_time"]:
+        for metric_key in ["wer", "cer", "structure_f1", "elapsed_time"]:
             vals = [
                 test["parsers"][parser].get(metric_key, 0)
                 for test in all_data.values()
@@ -261,6 +261,9 @@ def create_radar_chart(all_data: Dict) -> go.Figure:
             elif metric_key == "elapsed_time":
                 # Latency: 0s = 1.0 (best), 120s+ = 0.0 (worst)
                 normalized = max(0, 1 - avg / 120)
+            elif metric_key == "structure_f1":
+                # Structure F1: 0 = 0.0 (worst), 1 = 1.0 (best)
+                normalized = avg
             else:
                 normalized = avg
             values.append(normalized)
@@ -427,6 +430,8 @@ with tab_parsing:
             st.markdown("단어 단위 오류율. 삽입/삭제/대체 오류 종합.")
             st.markdown("**CER (Character Error Rate)** · :green[↓ 낮을수록 좋음]")
             st.markdown("문자 단위 오류율. 누락/추가/변경 문자 추적.")
+            st.markdown("**Structure F1** · :orange[↑ 높을수록 좋음]")
+            st.markdown("마크다운 구조 요소(헤딩, 리스트, 테이블) 검출 F1 스코어.")
         with col2:
             st.markdown("**Latency** · :green[↓ 낮을수록 좋음]")
             st.markdown("문서 1건 Parsing 처리 시간 (초).")
@@ -443,10 +448,11 @@ with tab_parsing:
     with col_table:
         # DataFrame 생성
         summary_df = get_parsing_summary_df(raw_data)
-        # Use available columns from new format
-        display_df = summary_df[["Test ID", "Parser", "CER %", "WER %", "Latency (s)", "Success"]].copy()
+        # Use available columns from new format (including Structure F1)
+        display_df = summary_df[["Test ID", "Parser", "CER %", "WER %", "Struct-F1 %", "Latency (s)", "Success"]].copy()
         display_df = display_df.rename(columns={
             "Test ID": "Test",
+            "Struct-F1 %": "Struct-F1",
             "Latency (s)": "Latency",
         })
         display_df["Latency"] = display_df["Latency"].apply(lambda x: f"{x:.1f}s")
@@ -473,8 +479,8 @@ with tab_parsing:
     # Metrics Comparison
     st.markdown("#### Metrics Comparison")
 
-    row1 = st.columns(2)
-    row2 = st.columns(2)
+    row1 = st.columns(3)
+    row2 = st.columns(3)
 
     with row1[0]:
         st.plotly_chart(
@@ -487,6 +493,12 @@ with tab_parsing:
             create_grouped_bar(PARSING_DATA, "cer", "CER", lower_is_better=True),
             width="stretch",
             config=get_chart_download_config("cer_comparison")
+        )
+    with row1[2]:
+        st.plotly_chart(
+            create_grouped_bar(PARSING_DATA, "structure_f1", "Structure F1", lower_is_better=False),
+            width="stretch",
+            config=get_chart_download_config("structure_f1_comparison")
         )
     with row2[0]:
         st.plotly_chart(
@@ -583,17 +595,21 @@ with tab_parsing:
                 else:
                     content_display = f"{int(content_length):,}"
 
+                structure_f1 = metrics.get('structure_f1')
+                struct_f1_display = f"{structure_f1:.3f}" if structure_f1 is not None else "N/A"
+
                 detail_rows.append({
                     "Parser": parser,
                     "WER ↓": f"{metrics.get('wer') or 0:.3f}",
                     "CER ↓": f"{metrics.get('cer') or 0:.3f}",
+                    "Struct-F1 ↑": struct_f1_display,
                     "Latency ↓": f"{metrics.get('elapsed_time') or 0:.1f}s",
                     "Content": content_display,
                 })
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
             # Bar Charts
-            chart_cols = st.columns(2)
+            chart_cols = st.columns(3)
             with chart_cols[0]:
                 st.plotly_chart(
                     create_thin_bar_chart(test_data, "wer", "WER", lower_is_better=True),
@@ -615,6 +631,12 @@ with tab_parsing:
                     create_thin_bar_chart(test_data, "content_length", "Content", lower_is_better=False),
                     width="stretch",
                     config=get_chart_download_config(f"{test_id}_content")
+                )
+            with chart_cols[2]:
+                st.plotly_chart(
+                    create_thin_bar_chart(test_data, "structure_f1", "Structure F1", lower_is_better=False),
+                    width="stretch",
+                    config=get_chart_download_config(f"{test_id}_structure_f1")
                 )
 
 
