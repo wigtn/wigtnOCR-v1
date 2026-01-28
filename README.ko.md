@@ -1,8 +1,8 @@
-# VLM 문서 파싱 품질 평가 프레임워크
+# 문서 파싱 구조 보존 테스트 프레임워크
 
-> **"구조적 무결성이 의미 검색을 개선하는가?"**
+> **"파싱 단계에서 손실된 구조는 영원히 손실된다 — 어떤 downstream 최적화도 이를 복원할 수 없다."**
 
-Vision-Language Model(VLM)의 구조화된 마크다운 출력이 기존 OCR 방식 대비 Semantic Chunking 및 RAG(Retrieval-Augmented Generation) 성능에 미치는 영향을 정량적으로 분석하는 종합 평가 프레임워크입니다.
+고객사 문서(표 안의 표, 이미지 테이블, 다단 레이아웃)의 RAG 파이프라인을 구축하면서 발견한 인사이트: **파싱 단계가 비가역적 병목**이라는 것입니다. 파싱 과정에서 문서 구조가 손실되면, 이후 어떤 downstream 최적화(청킹 전략 변경, 임베딩 모델 교체, Reranker 추가)로도 복원할 수 없습니다. 이 프레임워크는 기존 OCR 방식과 VLM 기반 구조화 파싱을 전체 파이프라인에 걸쳐 비교하여 해당 가설을 정량적으로 검증합니다.
 
 ---
 
@@ -48,23 +48,27 @@ python -m src.eval_chunking --all
 - **헤더 계층 손실**: 섹션 관계가 보존되지 않음
 - **의미적 단절**: 청킹이 잘못된 위치에서 분리됨
 
+**근본 원인**: 이 모든 증상의 원인은 파이프라인 첫 단계인 **Data Parsing에서의 구조 정보 손실**입니다. 청킹 전략 변경, 임베딩 모델 교체, Reranker 추가 등 downstream 고도화로는 파싱 단계에서 이미 손실된 구조를 복원할 수 없습니다.
+
 ### 가설
 
-> VLM 기반 파싱은 문서 레이아웃을 보존하는 구조화된 마크다운을 생성하여, 더 나은 의미적 청킹 경계(높은 Boundary Clarity)와 향상된 청크 일관성(낮은 Chunk Stickiness)을 달성하고, 궁극적으로 더 나은 검색 정확도를 제공합니다.
+> 파이프라인의 첫 단계(Data Parsing)에서 구조를 보존하면, 동일한 downstream 처리(청킹, 임베딩, 검색)로도 유의미하게 높은 품질을 달성할 수 있다. 반대로, 파싱에서 구조가 손실되면 어떤 downstream 최적화도 그 한계를 넘을 수 없다.
 
 ### 핵심 연구 질문
 
 | RQ | 질문 | 지표 |
 |----|------|------|
-| **RQ1** | VLM이 더 나은 어휘적 정확도를 달성하는가? | CER, WER, Structure F1 |
-| **RQ2** | VLM이 구조를 더 잘 보존하는가? | BC (Boundary Clarity), CS (Chunk Stickiness) |
-| **RQ3** | 더 나은 파싱이 검색을 개선하는가? | Hit Rate@k, MRR |
+| **RQ1** | 기존 OCR이 문서 구조를 얼마나 손실하는가? | CER, WER, Structure F1 |
+| **RQ2** | VLM 기반 파싱이 구조를 보존할 수 있는가? | BC (Boundary Clarity), CS (Chunk Stickiness) |
+| **RQ3** | 파싱 단계의 구조 보존이 downstream(청킹, 검색) 품질을 결정하는가? | Hit Rate@k, MRR |
 
 ---
 
 ## 주요 기능
 
 ### 4가지 파서 아키텍처
+
+4가지 파서를 사용한 통제 실험 설계: **Baseline**(구조 비보존) vs **Advanced**(VLM 기반 구조 보존)을 **Text**(디지털 PDF)와 **Image**(스캔 PDF) 두 가지 추출 경로에서 비교합니다. 이를 통해 추출 방식과 무관하게 구조 보존의 효과를 분리하여 검증합니다.
 
 | 파서 | 설명 | Stage 1 | Stage 2 |
 |------|------|---------|---------|
@@ -83,7 +87,7 @@ LangChain의 SemanticChunker를 사용한 임베딩 기반 경계 탐지:
 
 ### MoC 기반 품질 지표 (라벨 불필요)
 
-MoC 논문(arXiv:2503.09600v2) 기반, **Semantic Distance**를 사용한 구현:
+파싱 구조 보존이 청킹 품질에 미치는 downstream 영향을 측정합니다. MoC 논문(arXiv:2503.09600v2) 기반, **Semantic Distance**를 사용한 구현:
 
 | 지표 | 구현 방식 | 해석 |
 |------|----------|------|
@@ -116,16 +120,22 @@ MoC 논문(arXiv:2503.09600v2) 기반, **Semantic Distance**를 사용한 구현
 |   (텍스트 레이어 있음)    |             |    (이미지 기반)        |
 +------------------------+             +------------------------+
             |                                       |
-     +------+------+                         +------+------+
-     |             |                         |             |
-     v             v                         v             v
-+---------+  +-----------+            +-----------+  +------------+
-|  Text   |  |   Text    |            |   Image   |  |   Image    |
-| Baseline|  |  Advanced |            |  Baseline |  |  Advanced  |
-| PyMuPDF |  | +VLM 구조화|           |  RapidOCR |  | +VLM 구조화 |
-+---------+  +-----------+            +-----------+  +------------+
-     |             |                         |             |
-     +------+------+                         +------+------+
+╔════════════════════════════════════════════════════════════════════╗
+║            ★ 파싱 단계 (Bottleneck) ★                            ║
+║  구조 보존됨 → 품질이 downstream으로 전파                          ║
+║  구조 손실됨 → 복원 불가능                                        ║
+╠════════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║   +------+------+                         +------+------+        ║
+║   |             |                         |             |        ║
+║   v             v                         v             v        ║
+║ +---------+  +-----------+          +-----------+  +----------+  ║
+║ |  Text   |  |   Text    |          |   Image   |  |  Image   |  ║
+║ | Baseline|  |  Advanced |          |  Baseline |  | Advanced |  ║
+║ | PyMuPDF |  |+VLM 구조화 |         |  RapidOCR |  |+VLM 구조화| ║
+║ +---------+  +-----------+          +-----------+  +----------+  ║
+║   구조 미보존   구조 보존              구조 미보존    구조 보존     ║
+╚════════════════════════════════════════════════════════════════════╝
             |                                       |
             v                                       v
 +--------------------------------------------------------------------+
@@ -135,11 +145,13 @@ MoC 논문(arXiv:2503.09600v2) 기반, **Semantic Distance**를 사용한 구현
                                 |
                                 v
 +--------------------------------------------------------------------+
-|                         평가 레이어                                  |
+|                  영향 전파 평가 (Impact Cascade)                     |
 |   +----------+   +-----------+   +----------+   +----------+       |
 |   |   어휘   |   |    구조    |   |   청킹   |   |   검색    |      |
 |   | CER, WER |   |     F1    |   |  BC, CS  |   | HR@k,MRR |       |
 |   +----------+   +-----------+   +----------+   +----------+       |
+|                                                                    |
+|   파싱 품질 ──────────────────────→ Downstream 품질                  |
 +--------------------------------------------------------------------+
 ```
 
@@ -156,7 +168,7 @@ MoC 논문(arXiv:2503.09600v2) 기반, **Semantic Distance**를 사용한 구현
 ### uv 사용 (권장)
 
 ```bash
-git clone https://github.com/your-repo/test-vlm-document-parsing.git
+git clone https://github.com/Hyeongseob91/test-vlm-document-parsing.git
 cd test-vlm-document-parsing
 
 # uv로 설치
@@ -508,9 +520,10 @@ MIT License
 ## 인용
 
 ```bibtex
-@software{vlm_document_parsing,
-  title = {VLM Document Parsing Quality Test Framework},
+@software{document_parsing_structure,
+  title = {Document Parsing Structure Preservation Test Framework},
+  author = {Kim, Hyeongseob},
   year = {2025},
-  url = {https://github.com/your-repo/test-vlm-document-parsing}
+  url = {https://github.com/Hyeongseob91/test-vlm-document-parsing}
 }
 ```

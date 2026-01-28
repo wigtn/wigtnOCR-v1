@@ -1,8 +1,8 @@
-# VLM Document Parsing Quality Test Framework
+# Document Parsing Structure Preservation Test Framework
 
-> **"Does Structural Integrity in Parsing Improve Semantic Retrieval?"**
+> **"Structure lost at parsing is structure lost forever — no downstream optimization can recover it."**
 
-A comprehensive evaluation framework for quantitatively analyzing the impact of Vision-Language Model (VLM) structured markdown output on semantic chunking and RAG (Retrieval-Augmented Generation) performance compared to traditional OCR methods.
+In enterprise RAG pipelines handling complex documents — nested tables, image-embedded tables, multi-column layouts — we discovered that **the parsing stage is the irreversible bottleneck**. Once document structure is lost during parsing, no amount of downstream optimization (chunking strategies, embedding model swaps, reranker additions) can recover it. This framework quantitatively validates that hypothesis by comparing traditional OCR methods against VLM-based structured parsing across the full pipeline.
 
 ---
 
@@ -48,23 +48,27 @@ Traditional RAG pipelines rely heavily on plain text extraction, which fails to 
 - **Header Hierarchy Loss**: Section relationships not preserved
 - **Semantic Discontinuity**: Chunking breaks at wrong positions
 
+**Root Cause**: All of these symptoms originate from a single point of failure — **structural information loss at the Data Parsing stage**, the very first step of the pipeline. Changing chunking strategies, swapping embedding models, or adding rerankers cannot recover structure that was already discarded during parsing.
+
 ### Hypothesis
 
-> VLM-based parsing produces structured markdown that preserves document layout, leading to better semantic chunking boundaries (higher Boundary Clarity) and improved chunk coherence (lower Chunk Stickiness), ultimately resulting in better retrieval accuracy.
+> If the first stage of the pipeline (Data Parsing) preserves document structure, then the same downstream processing (chunking, embedding, retrieval) achieves significantly higher quality. Conversely, if structure is lost at parsing, no downstream optimization can overcome that ceiling.
 
 ### Core Research Questions
 
 | RQ | Question | Metrics |
 |----|----------|---------|
-| **RQ1** | Does VLM achieve better lexical accuracy? | CER, WER, Structure F1 |
-| **RQ2** | Does VLM preserve structure better? | BC (Boundary Clarity), CS (Chunk Stickiness) |
-| **RQ3** | Does better parsing improve retrieval? | Hit Rate@k, MRR |
+| **RQ1** | How much document structure does traditional OCR lose? | CER, WER, Structure F1 |
+| **RQ2** | Can VLM-based parsing preserve that structure? | BC (Boundary Clarity), CS (Chunk Stickiness) |
+| **RQ3** | Does structure preservation at parsing determine downstream (chunking, retrieval) quality? | Hit Rate@k, MRR |
 
 ---
 
 ## Key Features
 
 ### 4-Parser Architecture
+
+A controlled experiment design with 4 parsers: **Baseline** (no structure preservation) vs **Advanced** (VLM-based structure preservation), across both **Text** (digital PDF) and **Image** (scanned PDF) extraction paths. This isolates the effect of structure preservation regardless of the extraction method.
 
 | Parser | Description | Stage 1 | Stage 2 |
 |--------|-------------|---------|---------|
@@ -83,7 +87,7 @@ Uses LangChain's SemanticChunker with embedding-based boundary detection:
 
 ### MoC-based Quality Metrics (Label-Free)
 
-Based on the MoC paper (arXiv:2503.09600v2), using **Semantic Distance** instead of Perplexity:
+Measures the downstream impact of parsing structure preservation on chunking quality. Based on the MoC paper (arXiv:2503.09600v2), using **Semantic Distance** instead of Perplexity:
 
 | Metric | Implementation | Interpretation |
 |--------|---------------|----------------|
@@ -116,16 +120,23 @@ Based on the MoC paper (arXiv:2503.09600v2), using **Semantic Distance** instead
 |   (has text layer)     |             |    (image-based)       |
 +------------------------+             +------------------------+
             |                                       |
-     +------+------+                         +------+------+
-     |             |                         |             |
-     v             v                         v             v
-+---------+  +-----------+            +-----------+  +------------+
-|  Text   |  |   Text    |            |   Image   |  |   Image    |
-| Baseline|  |  Advanced |            |  Baseline |  |  Advanced  |
-| PyMuPDF |  | +VLM Struct|           |  RapidOCR |  | +VLM Struct |
-+---------+  +-----------+            +-----------+  +------------+
-     |             |                         |             |
-     +------+------+                         +------+------+
+╔════════════════════════════════════════════════════════════════════╗
+║              ★ PARSING STAGE (Bottleneck)  ★                     ║
+║  Structure preserved here → quality propagates downstream        ║
+║  Structure lost here     → no recovery possible                  ║
+╠════════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║   +------+------+                         +------+------+        ║
+║   |             |                         |             |        ║
+║   v             v                         v             v        ║
+║ +---------+  +-----------+          +-----------+  +----------+  ║
+║ |  Text   |  |   Text    |          |   Image   |  |  Image   |  ║
+║ | Baseline|  |  Advanced |          |  Baseline |  | Advanced |  ║
+║ | PyMuPDF |  | +VLM Struct|         |  RapidOCR |  |+VLM Struct| ║
+║ +---------+  +-----------+          +-----------+  +----------+  ║
+║   No struct.   Struct.                No struct.    Struct.       ║
+║   preserved    preserved              preserved     preserved    ║
+╚════════════════════════════════════════════════════════════════════╝
             |                                       |
             v                                       v
 +--------------------------------------------------------------------+
@@ -135,11 +146,13 @@ Based on the MoC paper (arXiv:2503.09600v2), using **Semantic Distance** instead
                                 |
                                 v
 +--------------------------------------------------------------------+
-|                      Evaluation Layer                              |
+|                 Impact Cascade Evaluation                          |
 |   +----------+   +-----------+   +----------+   +----------+      |
 |   | Lexical  |   | Structure |   | Chunking |   | Retrieval|      |
-|   | CER, WER |   |    F1     |   |  BC, CS  |   | HR@k,MRR |      |
+|   | CER, WER |   |    F1     |   |  BC, CS  |   | HR@k,MRR|      |
 |   +----------+   +-----------+   +----------+   +----------+      |
+|                                                                    |
+|   Parsing quality ──────────────────────→ Downstream quality       |
 +--------------------------------------------------------------------+
 ```
 
@@ -156,7 +169,7 @@ Based on the MoC paper (arXiv:2503.09600v2), using **Semantic Distance** instead
 ### Using uv (Recommended)
 
 ```bash
-git clone https://github.com/your-repo/test-vlm-document-parsing.git
+git clone https://github.com/Hyeongseob91/test-vlm-document-parsing.git
 cd test-vlm-document-parsing
 
 # Install with uv
@@ -479,9 +492,10 @@ MIT License
 ## Citation
 
 ```bibtex
-@software{vlm_document_parsing,
-  title = {VLM Document Parsing Quality Test Framework},
+@software{document_parsing_structure,
+  title = {Document Parsing Structure Preservation Test Framework},
+  author = {Kim, Hyeongseob},
   year = {2025},
-  url = {https://github.com/your-repo/test-vlm-document-parsing}
+  url = {https://github.com/Hyeongseob91/test-vlm-document-parsing}
 }
 ```
