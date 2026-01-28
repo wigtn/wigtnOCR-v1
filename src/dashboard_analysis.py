@@ -202,8 +202,6 @@ def create_thin_bar_chart(data: Dict, metric: str, title: str,
     # Format based on metric type
     if metric == "elapsed_time":
         text_values = [f"{v:.1f}s" for v in values]
-    elif metric == "content_length":
-        text_values = ["데이터없음" if v == 0 else f"{int(v):,}" for v in values]
     else:
         text_values = [f"{v:.3f}" for v in values]
 
@@ -215,23 +213,23 @@ def create_thin_bar_chart(data: Dict, metric: str, title: str,
         marker_line_width=0,
         text=text_values,
         textposition="outside",
-        textfont=dict(size=11, color="#666"),
+        textfont=dict(size=12, color="#333"),
     ))
 
     direction = "← Lower is better" if lower_is_better else "Higher is better →"
     fig.update_layout(
-        title=dict(text=title, font=dict(size=13, color="#1a1a2e"), x=0),
-        height=160,
-        margin=dict(l=0, r=60, t=35, b=5),
+        title=dict(text=title, font=dict(size=14, color="#1a1a2e"), x=0),
+        height=180,
+        margin=dict(l=10, r=80, t=40, b=25),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(size=11, color="#666"),
+        font=dict(size=12, color="#666"),
         xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
-        yaxis=dict(showgrid=False, tickfont=dict(size=10)),
+        yaxis=dict(showgrid=False, tickfont=dict(size=12)),
         showlegend=False,
         annotations=[dict(
-            text=direction, x=1, y=-0.15, xref="paper", yref="paper",
-            showarrow=False, font=dict(size=9, color="#999"), xanchor="right"
+            text=direction, x=1, y=-0.12, xref="paper", yref="paper",
+            showarrow=False, font=dict(size=10, color="#888"), xanchor="right"
         )]
     )
     return fig
@@ -282,13 +280,13 @@ def create_radar_chart(all_data: Dict) -> go.Figure:
     fig.update_layout(
         polar=dict(
             radialaxis=dict(visible=True, range=[0, 1], showticklabels=False, gridcolor="#E5E5E5"),
-            angularaxis=dict(tickfont=dict(size=11, color="#666"), gridcolor="#E5E5E5"),
+            angularaxis=dict(tickfont=dict(size=13, color="#333"), gridcolor="#E5E5E5"),
             bgcolor="rgba(0,0,0,0)",
         ),
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5, font=dict(size=10)),
-        height=350,
-        margin=dict(l=60, r=60, t=30, b=60),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5, font=dict(size=12)),
+        height=450,
+        margin=dict(l=80, r=80, t=40, b=80),
         paper_bgcolor="rgba(0,0,0,0)",
     )
     return fig
@@ -360,20 +358,20 @@ def create_grouped_bar(all_data: Dict, metric: str, title: str, lower_is_better:
             name=parser, x=test_ids, y=values,
             marker_color=color, marker_line_width=0,
             text=[f"{v:.2f}" if metric != "elapsed_time" else f"{v:.1f}s" for v in values],
-            textposition="outside", textfont=dict(size=9), width=0.25,
+            textposition="outside", textfont=dict(size=11), width=0.3,
         ))
 
     direction = "↓ Lower is better" if lower_is_better else "↑ Higher is better"
     fig.update_layout(
-        title=dict(text=f"{title} ({direction})", font=dict(size=13, color="#1a1a2e"), x=0),
-        barmode="group", height=280,
-        margin=dict(l=40, r=20, t=50, b=60),
+        title=dict(text=f"{title} ({direction})", font=dict(size=15, color="#1a1a2e"), x=0),
+        barmode="group", height=380,
+        margin=dict(l=50, r=30, t=60, b=80),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(size=10, color="#666"),
-        xaxis=dict(showgrid=False, tickfont=dict(size=10)),
-        yaxis=dict(gridcolor="#E5E5E5", gridwidth=0.5, zeroline=False),
-        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="left", x=0, font=dict(size=9)),
-        bargap=0.3, bargroupgap=0.1,
+        font=dict(size=12, color="#666"),
+        xaxis=dict(showgrid=False, tickfont=dict(size=12)),
+        yaxis=dict(gridcolor="#E5E5E5", gridwidth=0.5, zeroline=False, tickfont=dict(size=11)),
+        legend=dict(orientation="h", yanchor="top", y=-0.12, xanchor="center", x=0.5, font=dict(size=11)),
+        bargap=0.25, bargroupgap=0.1,
     )
     return fig
 
@@ -430,13 +428,11 @@ with tab_parsing:
             st.markdown("단어 단위 오류율. 삽입/삭제/대체 오류 종합.")
             st.markdown("**CER (Character Error Rate)** · :green[↓ 낮을수록 좋음]")
             st.markdown("문자 단위 오류율. 누락/추가/변경 문자 추적.")
+        with col2:
             st.markdown("**Structure F1** · :orange[↑ 높을수록 좋음]")
             st.markdown("마크다운 구조 요소(헤딩, 리스트, 테이블) 검출 F1 스코어.")
-        with col2:
             st.markdown("**Latency** · :green[↓ 낮을수록 좋음]")
             st.markdown("문서 1건 Parsing 처리 시간 (초).")
-            st.markdown("**Content Length** · :orange[↑ 높을수록 좋음]")
-            st.markdown("추출된 텍스트 길이 (문자 수).")
 
     st.markdown("---")
 
@@ -479,38 +475,32 @@ with tab_parsing:
     # Metrics Comparison
     st.markdown("#### Metrics Comparison")
 
-    row1 = st.columns(3)
-    row2 = st.columns(3)
+    row1 = st.columns(2)
+    row2 = st.columns(2)
 
     with row1[0]:
         st.plotly_chart(
             create_grouped_bar(PARSING_DATA, "wer", "WER", lower_is_better=True),
-            width="stretch",
+            use_container_width=True,
             config=get_chart_download_config("wer_comparison")
         )
     with row1[1]:
         st.plotly_chart(
             create_grouped_bar(PARSING_DATA, "cer", "CER", lower_is_better=True),
-            width="stretch",
+            use_container_width=True,
             config=get_chart_download_config("cer_comparison")
-        )
-    with row1[2]:
-        st.plotly_chart(
-            create_grouped_bar(PARSING_DATA, "structure_f1", "Structure F1", lower_is_better=False),
-            width="stretch",
-            config=get_chart_download_config("structure_f1_comparison")
         )
     with row2[0]:
         st.plotly_chart(
-            create_grouped_bar(PARSING_DATA, "elapsed_time", "Latency (s)", lower_is_better=True),
-            width="stretch",
-            config=get_chart_download_config("latency_comparison")
+            create_grouped_bar(PARSING_DATA, "structure_f1", "Structure F1", lower_is_better=False),
+            use_container_width=True,
+            config=get_chart_download_config("structure_f1_comparison")
         )
     with row2[1]:
         st.plotly_chart(
-            create_grouped_bar(PARSING_DATA, "content_length", "Content Length", lower_is_better=False),
-            width="stretch",
-            config=get_chart_download_config("content_comparison")
+            create_grouped_bar(PARSING_DATA, "elapsed_time", "Latency (s)", lower_is_better=True),
+            use_container_width=True,
+            config=get_chart_download_config("latency_comparison")
         )
 
     st.markdown("---")
@@ -589,12 +579,6 @@ with tab_parsing:
             # 테이블
             detail_rows = []
             for parser, metrics in test_data["parsers"].items():
-                content_length = metrics.get('content_length')
-                if content_length is None or content_length == 0:
-                    content_display = "데이터없음"
-                else:
-                    content_display = f"{int(content_length):,}"
-
                 structure_f1 = metrics.get('structure_f1')
                 struct_f1_display = f"{structure_f1:.3f}" if structure_f1 is not None else "N/A"
 
@@ -604,39 +588,32 @@ with tab_parsing:
                     "CER ↓": f"{metrics.get('cer') or 0:.3f}",
                     "Struct-F1 ↑": struct_f1_display,
                     "Latency ↓": f"{metrics.get('elapsed_time') or 0:.1f}s",
-                    "Content": content_display,
                 })
             st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
             # Bar Charts
-            chart_cols = st.columns(3)
+            chart_cols = st.columns(2)
             with chart_cols[0]:
                 st.plotly_chart(
                     create_thin_bar_chart(test_data, "wer", "WER", lower_is_better=True),
-                    width="stretch",
+                    use_container_width=True,
                     config=get_chart_download_config(f"{test_id}_wer")
                 )
                 st.plotly_chart(
-                    create_thin_bar_chart(test_data, "elapsed_time", "Latency", lower_is_better=True),
-                    width="stretch",
-                    config=get_chart_download_config(f"{test_id}_latency")
+                    create_thin_bar_chart(test_data, "cer", "CER", lower_is_better=True),
+                    use_container_width=True,
+                    config=get_chart_download_config(f"{test_id}_cer")
                 )
             with chart_cols[1]:
                 st.plotly_chart(
-                    create_thin_bar_chart(test_data, "cer", "CER", lower_is_better=True),
-                    width="stretch",
-                    config=get_chart_download_config(f"{test_id}_cer")
-                )
-                st.plotly_chart(
-                    create_thin_bar_chart(test_data, "content_length", "Content", lower_is_better=False),
-                    width="stretch",
-                    config=get_chart_download_config(f"{test_id}_content")
-                )
-            with chart_cols[2]:
-                st.plotly_chart(
                     create_thin_bar_chart(test_data, "structure_f1", "Structure F1", lower_is_better=False),
-                    width="stretch",
+                    use_container_width=True,
                     config=get_chart_download_config(f"{test_id}_structure_f1")
+                )
+                st.plotly_chart(
+                    create_thin_bar_chart(test_data, "elapsed_time", "Latency", lower_is_better=True),
+                    use_container_width=True,
+                    config=get_chart_download_config(f"{test_id}_latency")
                 )
 
 

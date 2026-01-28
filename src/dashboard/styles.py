@@ -59,26 +59,31 @@ COLORS["twostage_image_color"] = "#0891B2"  # Cyan - TwoStage-Image
 COLORS["ocr_image_color"] = "#D97706"       # Amber - OCR-Image (alias)
 
 # Parser name to color mapping (Single Source of Truth)
-# VLM: Indigo, OCR/Text-Baseline: Emerald, OCR-Image: Amber, TwoStage/Advanced: Purple/Cyan
+# Colors chosen for clear visual distinction
 PARSER_COLORS = {
-    # VLM parser
-    "vlm": "#4F46E5",
-    "VLM": "#4F46E5",
-    # Text-Baseline / OCR-Text parser (Emerald)
+    # VLM parser (Blue - distinct from others)
+    "vlm": "#2563EB",
+    "VLM": "#2563EB",
+    # Text-Baseline / OCR-Text parser (Emerald Green)
     "ocr": "#059669",
     "OCR": "#059669",
     "OCR-Text": "#059669",
     "ocr-text": "#059669",
     "Text-Baseline": "#059669",
     "text-baseline": "#059669",
-    # OCR-Image parser (Amber)
-    "OCR-Image": "#D97706",
-    "ocr-image": "#D97706",
-    # Text-Advanced / TwoStage parsers (Purple/Cyan)
-    "Text-Advanced": "#7C3AED",
-    "text-advanced": "#7C3AED",
-    "TwoStage-Text": "#7C3AED",
-    "twostage-text": "#7C3AED",
+    # OCR-Image / Image-Baseline parser (Orange)
+    "OCR-Image": "#EA580C",
+    "ocr-image": "#EA580C",
+    "Image-Baseline": "#EA580C",
+    "image-baseline": "#EA580C",
+    # Text-Advanced (Red-Orange - clearly distinct from green baseline)
+    "Text-Advanced": "#DC2626",
+    "text-advanced": "#DC2626",
+    "TwoStage-Text": "#DC2626",
+    "twostage-text": "#DC2626",
+    # Image-Advanced / TwoStage-Image (Cyan/Teal)
+    "Image-Advanced": "#0891B2",
+    "image-advanced": "#0891B2",
     "TwoStage-Image": "#0891B2",
     "twostage-image": "#0891B2",
 }
