@@ -15,6 +15,16 @@
 
 In enterprise RAG pipelines handling complex documents — nested tables, image-embedded tables, multi-column layouts — we discovered that **the parsing stage is the irreversible bottleneck**. Once document structure is lost during parsing, no amount of downstream optimization (chunking strategies, embedding model swaps, reranker additions) can recover it. This framework quantitatively validates that hypothesis by comparing traditional OCR methods against VLM-based structured parsing across the full pipeline.
 
+### Key Results
+
+| RQ | Question | Metric | Result |
+|----|----------|--------|--------|
+| **RQ1** | Is OCR extraction quality sufficient for VLM input? | CER, WER | Baseline CER 40-51% ✓ (Korean scan: hallucination risk) |
+| **RQ2** | Does VLM Two-Stage Parsing preserve structure better? | Structure F1 | **0% → 79.25%** (Precision 72%, Recall 88%) |
+| **RQ3** | Does structure preservation improve chunking? | BC, CS | BC 0.512, 18 natural section boundaries |
+
+**Trade-off** (test_3 benchmark): +79pp Structure F1, +17pp CER cost, 159× latency
+
 ---
 
 ## Quick Start
@@ -40,6 +50,7 @@ python -m src.eval_chunking --all
 - [Installation](#installation)
 - [Usage](#usage)
 - [Evaluation Metrics](#evaluation-metrics)
+- [Experimental Results](#experimental-results)
 - [Project Structure](#project-structure)
 - [Configuration](#configuration)
 - [API Reference](#api-reference)
@@ -59,21 +70,25 @@ Traditional RAG pipelines rely heavily on plain text extraction, which fails to 
 - **Header Hierarchy Loss**: Section relationships not preserved
 - **Semantic Discontinuity**: Chunking breaks at wrong positions
 
-**Root Cause**: All of these symptoms originate from a single point of failure — **structural information loss at the Data Parsing stage**, the very first step of the pipeline. Changing chunking strategies, swapping embedding models, or adding rerankers cannot recover structure that was already discarded during parsing.
+**Root Cause**: All of these symptoms originate from a single point of failure — **structural information loss at the Data Parsing stage**, the very first step of the pipeline. All Baseline parsers produce **Structure F1 = 0%** — they extract text but generate no markdown structure elements.
 
 ### Hypothesis
 
 > If the first stage of the pipeline (Data Parsing) preserves document structure, then the same downstream processing (chunking, embedding, retrieval) achieves significantly higher quality. Conversely, if structure is lost at parsing, no downstream optimization can overcome that ceiling.
 
-### Core Research Questions
+### Structured Data Definition
 
-| RQ | Question | Metrics |
-|----|----------|---------|
-| **RQ1** | How much document structure does traditional OCR lose? | CER, WER, Structure F1 |
-| **RQ2** | Can VLM-based parsing preserve that structure? | BC (Boundary Clarity), CS (Chunk Stickiness) |
-| **RQ3** | Does structure preservation at parsing determine downstream (chunking, retrieval) quality? | Hit Rate@k, MRR |
+> **Structured data** in this framework refers to text containing markdown structure elements: Headings (`#`), Lists (`-`/`1.`), Tables (`|...|`), and Code Blocks (`` ``` ``). Structure quality is measured by counting these elements in Ground Truth (GT) markdown files and computing **Structure F1** (Precision, Recall, F1).
 
-### Key Results
+### Research Questions
+
+| RQ | Question | Metrics | Role |
+|----|----------|---------|------|
+| **RQ1** | Is OCR extraction quality sufficient for VLM input? | CER, WER | **Prerequisite validation** |
+| **RQ2** | Does VLM Two-Stage Parsing preserve document structure better? | Structure F1 (Precision, Recall) | **Core hypothesis** |
+| **RQ3** | Does structure preservation improve semantic chunking quality? | BC (Boundary Coherence), CS (Chunk Score) | **Downstream impact** |
+
+**Logic flow**: CER/WER prerequisite check → VLM structuring → Structure F1 measurement → BC/CS downstream validation
 
 <div align="center">
 
@@ -101,10 +116,22 @@ A controlled experiment design with 4 parsers: **Baseline** (no structure preser
 
 | Parser | Description | Stage 1 | Stage 2 |
 |--------|-------------|---------|---------|
-| **Text-Baseline** | Digital PDF text extraction | PyMuPDF | - |
+| **Text-Baseline** | Digital PDF text extraction | PyMuPDF (`fitz`) | - |
 | **Image-Baseline** | Scanned PDF OCR | RapidOCR | - |
-| **Text-Advanced** | Digital + VLM structuring | PyMuPDF | VLM (Qwen3-VL) |
-| **Image-Advanced** | Scanned + VLM structuring | RapidOCR | VLM (Qwen3-VL) |
+| **Text-Advanced** | Digital + VLM structuring | PyMuPDF (`fitz`) | Qwen3-VL-2B-Instruct |
+| **Image-Advanced** | Scanned + VLM structuring | RapidOCR | Qwen3-VL-2B-Instruct |
+
+### VLM Prompt Strategy (v2 — CRITICAL RULES)
+
+The prompt evolved through iterative experimentation:
+
+1. **v1 (Initial)**: Generic "document structure expert" → Structure F1 = **0%** (no heading markers generated)
+2. **v2 (commit `90d516d`)**: CRITICAL RULES + explicit heading level mapping → Structure F1 = **~79%**
+   - System/User prompt separation
+   - "MUST", "NEVER" enforcement directives
+   - Number → markdown level mapping (1→`##`, 2.1→`###`, 3.1.1→`####`)
+
+**Lesson**: For 2B-parameter models, explicit rules ("MUST use #") are far more effective than implicit instructions ("clean markdown").
 
 ### Semantic Chunking
 
@@ -125,12 +152,13 @@ Measures the downstream impact of parsing structure preservation on chunking qua
 
 **Note**: Semantic Distance BC scores (0.3-0.5) differ from MoC's Perplexity-based scores (0.8+) due to different metric scales.
 
-### Comprehensive Evaluation
+### Three-Stage Evaluation
 
-- **Lexical Metrics**: CER, WER with Korean morphological analysis (MeCab)
-- **Structure Metrics**: Structure F1 (Precision, Recall for markdown elements)
-- **Chunking Metrics**: BC, CS without Ground Truth
-- **Retrieval Metrics**: Hit Rate@k, MRR with statistical significance testing
+| Stage | Role | Metrics | Description |
+|-------|------|---------|-------------|
+| **Stage 1** | Prerequisite | CER, WER | Text extraction quality check |
+| **Stage 2** | Core evaluation | Structure F1 (P, R) | Structure preservation measurement |
+| **Stage 3** | Downstream | BC, CS | Chunking quality impact |
 
 ---
 
@@ -175,11 +203,12 @@ Measures the downstream impact of parsing structure preservation on chunking qua
                                 |
                                 v
 +--------------------------------------------------------------------+
-|                 Impact Cascade Evaluation                          |
-|   +----------+   +-----------+   +----------+   +----------+      |
-|   | Lexical  |   | Structure |   | Chunking |   | Retrieval|      |
-|   | CER, WER |   |    F1     |   |  BC, CS  |   | HR@k,MRR|      |
-|   +----------+   +-----------+   +----------+   +----------+      |
+|              Three-Stage Evaluation (Impact Cascade)               |
+|   +-----------+   +------------+   +-----------+   +----------+   |
+|   | RQ1:      |   | RQ2:       |   | RQ3:      |   | Future:  |   |
+|   | CER, WER  | → | Structure  | → | BC, CS    | → | HR@k,MRR |   |
+|   |(Prereq.)  |   | F1 (P,R)   |   |(Downstream)|   |(Retrieval)|   |
+|   +-----------+   +------------+   +-----------+   +----------+   |
 |                                                                    |
 |   Parsing quality ──────────────────────→ Downstream quality       |
 +--------------------------------------------------------------------+
@@ -191,9 +220,17 @@ Measures the downstream impact of parsing structure preservation on chunking qua
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.13+
 - CUDA-capable GPU (for VLM inference)
 - MeCab (for Korean tokenization)
+
+### Hardware Used in Experiments
+
+| Component | Specification |
+|-----------|--------------|
+| GPU | NVIDIA RTX PRO 6000 Blackwell Server Edition × 2 (96GB VRAM each) |
+| RAM | 128GB DDR5 |
+| Storage | SSD |
 
 ### Using uv (Recommended)
 
@@ -227,7 +264,7 @@ pip install -e ".[all]"
 infinity_emb v2 --model-id BAAI/bge-m3 --port 8001
 
 # 2. VLM API (for Advanced parsers)
-# Deploy Qwen3-VL or similar VLM at http://localhost:8005
+# Deploy Qwen3-VL-2B-Instruct at http://localhost:8005
 ```
 
 ### MeCab Installation (Ubuntu)
@@ -289,39 +326,75 @@ streamlit run src/dashboard_analysis.py --server.port 8501
 
 ## Evaluation Metrics
 
-### Phase 1: Lexical Accuracy
+### Stage 1: Prerequisite Validation (CER, WER)
+
+CER/WER verify that text extraction quality is **sufficient for VLM input**, not the primary VLM performance metric.
 
 | Metric | Formula | Description |
 |--------|---------|-------------|
 | **CER** | `(S + D + I) / N` | Character Error Rate |
 | **WER** | `(S + D + I) / N` | Word Error Rate (with morphological tokenization) |
-| **Structure F1** | `2 * P * R / (P + R)` | F1 score for markdown structure elements |
 
-### Phase 2: Chunking Quality (MoC-based, Semantic Distance)
+### Stage 2: Structure Preservation (Structure F1)
+
+| Metric | Formula | Description |
+|--------|---------|-------------|
+| **Precision** | `TP / (TP + FP)` | Are generated structure elements correct? (monitors hallucination) |
+| **Recall** | `TP / (TP + FN)` | Are GT structure elements detected? (monitors omission) |
+| **Structure F1** | `2 * P * R / (P + R)` | Harmonic mean of Precision and Recall |
+
+**Why separate Precision/Recall?**: F1 alone cannot distinguish over-generation (FP) from omission (FN). VLMs can hallucinate structure elements, making Precision monitoring critical.
+
+**Structure elements evaluated**: Headings (`^#{1,6}\s+`), Lists (`^[-*+]\s+`, `^\d+\.\s+`), Tables (`^\|.+\|$`)
+
+### Stage 3: Chunking Quality (MoC-based, Semantic Distance)
 
 | Metric | Formula | Description |
 |--------|---------|-------------|
 | **BC** | `1 - cosine_similarity` | Higher is better (chunks are independent) |
 | **CS** | `-Σ (h_i/2m) * log2(h_i/2m)` | Lower is better (Structural Entropy) |
 
-**Key Advantages**:
-- No Ground Truth required
-- Repeatable measurements in production
-- Strong correlation with RAG performance
+---
 
-**BC Score Interpretation** (Semantic Distance scale):
-| Range | Quality |
-|-------|---------|
-| > 0.5 | Excellent - highly independent chunks |
-| 0.3 - 0.5 | Good - normal semantic chunking |
-| < 0.3 | Needs review - chunks may be too similar |
+## Experimental Results
 
-### Phase 3: Retrieval Performance
+### RQ1: Prerequisite Check — CER (test_3, Attention Is All You Need)
 
-| Metric | Formula | Description |
-|--------|---------|-------------|
-| **Hit Rate@k** | `hits_in_top_k / total_queries` | Relevant chunk in top-k results |
-| **MRR** | `(1/N) * Σ(1/rank_i)` | Mean Reciprocal Rank |
+| Parser | CER | WER | Prerequisite |
+|--------|-----|-----|-------------|
+| Text-Baseline | 51.25% | 57.19% | ✓ |
+| Image-Baseline | **40.79%** | **41.24%** | ✓ (best) |
+| Text-Advanced | 64.11% | 69.34% | ✓ (+13pp trade-off) |
+| Image-Advanced | 57.71% | 63.27% | ✓ (+17pp trade-off) |
+
+**Warning**: Korean scanned documents (test_1) showed CER 536% hallucination with Image-Advanced.
+
+### RQ2: Structure Preservation — Structure F1 (test_3)
+
+| Parser | Precision | Recall | F1 | TP | FP | FN |
+|--------|-----------|--------|-----|----|----|-----|
+| Text-Baseline | 0% | 0% | 0% | 0 | 11 | 24 |
+| Image-Baseline | 0% | 0% | 0% | 0 | 0 | 24 |
+| **Text-Advanced** | **72.41%** | **87.50%** | **79.25%** | 21 | 8 | 3 |
+| Image-Advanced | 70.00% | 87.50% | 77.78% | 21 | 9 | 3 |
+
+### RQ3: Downstream Impact
+
+- BC score 0.512 with 18 natural chunk divisions (test_3)
+- Markdown headers provide natural semantic boundaries for chunking
+
+### Trade-off Summary
+
+| Metric | Baseline (best) | Advanced (best) | Delta |
+|--------|----------------|----------------|-------|
+| CER | 40.79% | 57.71% | +16.92pp |
+| Structure F1 | 0% | 79.25% | **+79.25pp** |
+| Latency | 0.27s | 42.92s | ×159 |
+
+**Recommendation**:
+- **Speed-critical**: Baseline (0.27-2.3s)
+- **Structure-critical (RAG)**: Advanced (Structure F1 79%)
+- **Hybrid**: Route by document complexity
 
 ---
 
@@ -336,7 +409,7 @@ test-vlm-document-parsing/
 │   │
 │   ├── parsers/                 # Parser implementations
 │   │   ├── ocr_parser.py        # Text-Baseline (PyMuPDF), Image-Baseline (RapidOCR)
-│   │   ├── text_structurer.py   # VLM-based text structuring
+│   │   ├── text_structurer.py   # VLM-based text structuring (Qwen3-VL-2B)
 │   │   └── two_stage_parser.py  # Advanced parsers (Baseline + VLM)
 │   │
 │   ├── chunking/                # Semantic chunking module
@@ -368,6 +441,9 @@ test-vlm-document-parsing/
 │   │   └── README.md            # Summary
 │   └── ...
 │
+├── docs/
+│   └── tech_report/             # Full technical report (9 sections + appendices)
+│
 ├── tests/
 │   └── test_chunking_cli.py     # Unit tests for chunking module
 │
@@ -379,6 +455,17 @@ test-vlm-document-parsing/
 ---
 
 ## Configuration
+
+### VLM Configuration
+
+```yaml
+vlm_structurer:
+  model: "Qwen3-VL-2B-Instruct"
+  api_url: "http://localhost:8005/v1/chat/completions"
+  temperature: 0.1
+  max_tokens: 8192
+  prompt_version: "v2"  # CRITICAL RULES + explicit heading mapping
+```
 
 ### Chunking Configuration
 

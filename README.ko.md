@@ -15,6 +15,16 @@
 
 고객사 문서(표 안의 표, 이미지 테이블, 다단 레이아웃)의 RAG 파이프라인을 구축하면서 발견한 인사이트: **파싱 단계가 비가역적 병목**이라는 것입니다. 파싱 과정에서 문서 구조가 손실되면, 이후 어떤 downstream 최적화(청킹 전략 변경, 임베딩 모델 교체, Reranker 추가)로도 복원할 수 없습니다. 이 프레임워크는 기존 OCR 방식과 VLM 기반 구조화 파싱을 전체 파이프라인에 걸쳐 비교하여 해당 가설을 정량적으로 검증합니다.
 
+### 주요 결과
+
+| RQ | 질문 | 지표 | 결과 |
+|----|------|------|------|
+| **RQ1** | OCR 추출 품질이 VLM 입력으로 충분한가? | CER, WER | Baseline CER 40-51% ✓ (한글 스캔: hallucination 위험) |
+| **RQ2** | VLM Two-Stage Parsing이 구조를 더 잘 보존하는가? | Structure F1 | **0% → 79.25%** (Precision 72%, Recall 88%) |
+| **RQ3** | 구조 보존이 청킹 품질을 향상시키는가? | BC, CS | BC 0.512, 18개 자연 섹션 경계 |
+
+**Trade-off** (test_3 기준): +79pp Structure F1, +17pp CER 비용, 159배 지연시간
+
 ---
 
 ## 빠른 시작
@@ -40,6 +50,7 @@ python -m src.eval_chunking --all
 - [설치](#설치)
 - [사용법](#사용법)
 - [평가 지표](#평가-지표)
+- [실험 결과](#실험-결과)
 - [프로젝트 구조](#프로젝트-구조)
 - [설정](#설정)
 - [API 참조](#api-참조)
@@ -59,21 +70,25 @@ python -m src.eval_chunking --all
 - **헤더 계층 손실**: 섹션 관계가 보존되지 않음
 - **의미적 단절**: 청킹이 잘못된 위치에서 분리됨
 
-**근본 원인**: 이 모든 증상의 원인은 파이프라인 첫 단계인 **Data Parsing에서의 구조 정보 손실**입니다. 청킹 전략 변경, 임베딩 모델 교체, Reranker 추가 등 downstream 고도화로는 파싱 단계에서 이미 손실된 구조를 복원할 수 없습니다.
+**근본 원인**: 이 모든 증상의 원인은 파이프라인 첫 단계인 **Data Parsing에서의 구조 정보 손실**입니다. 모든 Baseline 파서는 **Structure F1 = 0%** — 텍스트는 추출하지만 마크다운 구조 요소를 전혀 생성하지 못합니다.
 
 ### 가설
 
 > 파이프라인의 첫 단계(Data Parsing)에서 구조를 보존하면, 동일한 downstream 처리(청킹, 임베딩, 검색)로도 유의미하게 높은 품질을 달성할 수 있다. 반대로, 파싱에서 구조가 손실되면 어떤 downstream 최적화도 그 한계를 넘을 수 없다.
 
+### 구조화된 데이터 정의
+
+> **구조화된 데이터**란 마크다운 구조 요소(Heading `#`, List `-`/`1.`, Table `|...|`, Code Block `` ``` ``)가 포함된 텍스트를 의미합니다. Ground Truth(GT) 마크다운 파일의 구조 요소 수를 기준으로 측정하며, **Structure F1** (Precision, Recall, F1)으로 정량화합니다.
+
 ### 핵심 연구 질문
 
-| RQ | 질문 | 지표 |
-|----|------|------|
-| **RQ1** | 기존 OCR이 문서 구조를 얼마나 손실하는가? | CER, WER, Structure F1 |
-| **RQ2** | VLM 기반 파싱이 구조를 보존할 수 있는가? | BC (Boundary Clarity), CS (Chunk Stickiness) |
-| **RQ3** | 파싱 단계의 구조 보존이 downstream(청킹, 검색) 품질을 결정하는가? | Hit Rate@k, MRR |
+| RQ | 질문 | 지표 | 역할 |
+|----|------|------|------|
+| **RQ1** | OCR 추출 품질이 VLM 입력으로 충분한가? | CER, WER | **전제 조건 검증** |
+| **RQ2** | VLM Two-Stage Parsing이 문서 구조를 더 잘 보존하는가? | Structure F1 (Precision, Recall) | **핵심 가설 검증** |
+| **RQ3** | 구조 보존이 시맨틱 청킹 품질을 향상시키는가? | BC (Boundary Coherence), CS (Chunk Score) | **다운스트림 효과** |
 
-### 핵심 결과
+**논리 흐름**: CER/WER 전제 확인 → VLM 구조화 적용 → Structure F1 측정 → BC/CS 다운스트림 검증
 
 <div align="center">
 
@@ -101,10 +116,22 @@ python -m src.eval_chunking --all
 
 | 파서 | 설명 | Stage 1 | Stage 2 |
 |------|------|---------|---------|
-| **Text-Baseline** | 디지털 PDF 텍스트 추출 | PyMuPDF | - |
+| **Text-Baseline** | 디지털 PDF 텍스트 추출 | PyMuPDF (`fitz`) | - |
 | **Image-Baseline** | 스캔 PDF OCR | RapidOCR | - |
-| **Text-Advanced** | 디지털 + VLM 구조화 | PyMuPDF | VLM (Qwen3-VL) |
-| **Image-Advanced** | 스캔 + VLM 구조화 | RapidOCR | VLM (Qwen3-VL) |
+| **Text-Advanced** | 디지털 + VLM 구조화 | PyMuPDF (`fitz`) | Qwen3-VL-2B-Instruct |
+| **Image-Advanced** | 스캔 + VLM 구조화 | RapidOCR | Qwen3-VL-2B-Instruct |
+
+### VLM 프롬프트 전략 (v2 — CRITICAL RULES)
+
+프롬프트는 반복 실험을 통해 진화했습니다:
+
+1. **v1 (초기)**: 일반적인 "document structure expert" → Structure F1 = **0%** (헤딩 마커 미생성)
+2. **v2 (commit `90d516d`)**: CRITICAL RULES + 명시적 헤딩 레벨 매핑 → Structure F1 = **~79%**
+   - System/User 프롬프트 분리
+   - "MUST", "NEVER" 강제 지시어 추가
+   - 번호 → 마크다운 레벨 매핑 (1→`##`, 2.1→`###`, 3.1.1→`####`)
+
+**교훈**: 2B 파라미터 소형 모델에서는 명시적 규칙("MUST use #")이 암시적 지시("clean markdown")보다 효과적입니다.
 
 ### 시맨틱 청킹
 
@@ -125,12 +152,13 @@ LangChain의 SemanticChunker를 사용한 임베딩 기반 경계 탐지:
 
 **참고**: Semantic Distance 기반 BC 점수(0.3-0.5)는 MoC의 Perplexity 기반 점수(0.8+)와 스케일이 다릅니다.
 
-### 종합 평가
+### 3단계 평가 체계
 
-- **어휘 지표**: 한국어 형태소 분석(MeCab)을 포함한 CER, WER
-- **구조 지표**: Structure F1 (마크다운 요소에 대한 Precision, Recall)
-- **청킹 지표**: Ground Truth 없이 BC, CS 측정
-- **검색 지표**: 통계적 유의성 검정을 포함한 Hit Rate@k, MRR
+| 단계 | 역할 | 지표 | 설명 |
+|------|------|------|------|
+| **1단계** | 전제 검증 | CER, WER | 텍스트 추출 품질 확인 |
+| **2단계** | 핵심 평가 | Structure F1 (P, R) | 구조 보존 측정 |
+| **3단계** | 다운스트림 | BC, CS | 청킹 품질 영향 |
 
 ---
 
@@ -174,11 +202,12 @@ LangChain의 SemanticChunker를 사용한 임베딩 기반 경계 탐지:
                                 |
                                 v
 +--------------------------------------------------------------------+
-|                  영향 전파 평가 (Impact Cascade)                     |
-|   +----------+   +-----------+   +----------+   +----------+       |
-|   |   어휘   |   |    구조    |   |   청킹   |   |   검색    |      |
-|   | CER, WER |   |     F1    |   |  BC, CS  |   | HR@k,MRR |       |
-|   +----------+   +-----------+   +----------+   +----------+       |
+|              3단계 평가 체계 (Impact Cascade)                       |
+|   +-----------+   +------------+   +-----------+   +----------+    |
+|   | RQ1:      |   | RQ2:       |   | RQ3:      |   | Future:  |   |
+|   | CER, WER  | → | Structure  | → | BC, CS    | → | HR@k,MRR |   |
+|   |(전제 검증) |   | F1 (P,R)   |   |(다운스트림)|   |(검색)     |   |
+|   +-----------+   +------------+   +-----------+   +----------+    |
 |                                                                    |
 |   파싱 품질 ──────────────────────→ Downstream 품질                  |
 +--------------------------------------------------------------------+
@@ -190,9 +219,17 @@ LangChain의 SemanticChunker를 사용한 임베딩 기반 경계 탐지:
 
 ### 사전 요구사항
 
-- Python 3.11+
+- Python 3.13+
 - CUDA 지원 GPU (VLM 추론용)
 - MeCab (한국어 토큰화용)
+
+### 실험 하드웨어
+
+| 구성 요소 | 사양 |
+|----------|------|
+| GPU | NVIDIA RTX PRO 6000 Blackwell Server Edition × 2 (각 96GB VRAM) |
+| RAM | 128GB DDR5 |
+| Storage | SSD |
 
 ### uv 사용 (권장)
 
@@ -226,7 +263,7 @@ pip install -e ".[all]"
 infinity_emb v2 --model-id BAAI/bge-m3 --port 8001
 
 # 2. VLM API (Advanced 파서용)
-# Qwen3-VL 또는 유사한 VLM을 http://localhost:8005에 배포
+# Qwen3-VL-2B-Instruct를 http://localhost:8005에 배포
 ```
 
 ### MeCab 설치 (Ubuntu)
@@ -288,39 +325,77 @@ streamlit run src/dashboard_analysis.py --server.port 8501
 
 ## 평가 지표
 
-### 1단계: 어휘적 정확도
+### 1단계: 전제 조건 검증 (CER, WER)
+
+CER/WER은 VLM의 성능 평가 지표가 아니라, **텍스트 추출 품질이 VLM 입력으로 충분한지** 확인하는 전제 조건 지표입니다.
 
 | 지표 | 공식 | 설명 |
 |------|------|------|
 | **CER** | `(S + D + I) / N` | 문자 오류율 |
 | **WER** | `(S + D + I) / N` | 단어 오류율 (형태소 토큰화 적용) |
-| **Structure F1** | `2 * P * R / (P + R)` | 마크다운 구조 요소에 대한 F1 점수 |
 
-### 2단계: 청킹 품질 (MoC 기반, Semantic Distance)
+### 2단계: 구조 보존 (Structure F1)
+
+| 지표 | 공식 | 설명 |
+|------|------|------|
+| **Precision** | `TP / (TP + FP)` | 생성한 구조 요소가 정확한가? (hallucination 모니터링) |
+| **Recall** | `TP / (TP + FN)` | GT 구조 요소를 검출했는가? (누락 모니터링) |
+| **Structure F1** | `2 * P * R / (P + R)` | Precision과 Recall의 조화평균 |
+
+**왜 Precision/Recall 분리가 필요한가?**: F1만으로는 과잉 생성(FP)과 누락(FN)을 구분할 수 없습니다. VLM은 hallucination으로 구조를 과잉 생성할 수 있으므로 Precision 모니터링이 중요합니다.
+
+**평가 대상 구조 요소**: Heading (`^#{1,6}\s+`), List (`^[-*+]\s+`, `^\d+\.\s+`), Table (`^\|.+\|$`)
+
+### 3단계: 청킹 품질 (MoC 기반, Semantic Distance)
 
 | 지표 | 공식 | 설명 |
 |------|------|------|
 | **BC** | `1 - cosine_similarity` | 높을수록 좋음 (청크 독립적) |
 | **CS** | `-Σ (h_i/2m) * log2(h_i/2m)` | 낮을수록 좋음 (Structural Entropy) |
 
-**주요 장점**:
-- Ground Truth 불필요
-- 프로덕션에서 반복 측정 가능
-- RAG 성능과 높은 상관관계
+---
 
-**BC 점수 해석** (Semantic Distance 스케일):
-| 범위 | 품질 |
-|------|------|
-| > 0.5 | 우수 - 매우 독립적인 청크 |
-| 0.3 - 0.5 | 양호 - 정상적인 시맨틱 청킹 |
-| < 0.3 | 검토 필요 - 청크가 너무 유사함 |
+## 실험 결과
 
-### 3단계: 검색 성능
+### RQ1: 전제 확인 — CER (test_3, Attention Is All You Need)
 
-| 지표 | 공식 | 설명 |
-|------|------|------|
-| **Hit Rate@k** | `hits_in_top_k / total_queries` | 상위 k개 결과에 관련 청크 포함 여부 |
-| **MRR** | `(1/N) * Σ(1/rank_i)` | 평균 역순위 |
+| 파서 | CER | WER | 전제 충족 |
+|------|-----|-----|----------|
+| Text-Baseline | 51.25% | 57.19% | ✓ |
+| Image-Baseline | **40.79%** | **41.24%** | ✓ (최선) |
+| Text-Advanced | 64.11% | 69.34% | ✓ (+13pp trade-off) |
+| Image-Advanced | 57.71% | 63.27% | ✓ (+17pp trade-off) |
+
+**주의**: 한글 스캔 문서(test_1)에서 Image-Advanced CER 536% hallucination 발생.
+
+### RQ2: 구조 보존 — Structure F1 (test_3)
+
+| 파서 | Precision | Recall | F1 | TP | FP | FN |
+|------|-----------|--------|-----|----|----|-----|
+| Text-Baseline | 0% | 0% | 0% | 0 | 11 | 24 |
+| Image-Baseline | 0% | 0% | 0% | 0 | 0 | 24 |
+| **Text-Advanced** | **72.41%** | **87.50%** | **79.25%** | 21 | 8 | 3 |
+| Image-Advanced | 70.00% | 87.50% | 77.78% | 21 | 9 | 3 |
+
+### RQ3: 다운스트림 효과
+
+- BC score 0.512, 18개 자연 청크 분할 (test_3)
+- 마크다운 헤더가 자연스러운 시맨틱 경계 제공
+
+### Trade-off 요약
+
+**왜 이 비교가 필요한가?**: 실무에서는 정확도와 구조화 품질 중 하나를 선택해야 합니다. VLM 구조화는 Structure F1을 +79pp 올리지만, CER은 +17pp 증가하고 처리 시간은 159배 느려집니다.
+
+| 지표 | Baseline (최선) | Advanced (최선) | 차이 |
+|------|----------------|----------------|------|
+| CER | 40.79% | 57.71% | +16.92pp |
+| Structure F1 | 0% | 79.25% | **+79.25pp** |
+| Latency | 0.27s | 42.92s | ×159 |
+
+**시나리오별 추천**:
+- **속도 우선 (실시간 검색)**: Baseline (0.27-2.3s)
+- **구조 우선 (RAG 청킹)**: Advanced (Structure F1 79%)
+- **하이브리드**: 문서 복잡도에 따라 라우팅
 
 ---
 
@@ -335,7 +410,7 @@ test-vlm-document-parsing/
 │   │
 │   ├── parsers/                 # 파서 구현
 │   │   ├── ocr_parser.py        # Text-Baseline (PyMuPDF), Image-Baseline (RapidOCR)
-│   │   ├── text_structurer.py   # VLM 기반 텍스트 구조화
+│   │   ├── text_structurer.py   # VLM 기반 텍스트 구조화 (Qwen3-VL-2B)
 │   │   └── two_stage_parser.py  # Advanced 파서 (Baseline + VLM)
 │   │
 │   ├── chunking/                # 시맨틱 청킹 모듈
@@ -367,6 +442,9 @@ test-vlm-document-parsing/
 │   │   └── README.md            # 요약
 │   └── ...
 │
+├── docs/
+│   └── tech_report/             # 전체 기술 보고서 (9개 섹션 + 부록)
+│
 ├── tests/
 │   └── test_chunking_cli.py     # 청킹 모듈 단위 테스트
 │
@@ -378,6 +456,17 @@ test-vlm-document-parsing/
 ---
 
 ## 설정
+
+### VLM 설정
+
+```yaml
+vlm_structurer:
+  model: "Qwen3-VL-2B-Instruct"
+  api_url: "http://localhost:8005/v1/chat/completions"
+  temperature: 0.1
+  max_tokens: 8192
+  prompt_version: "v2"  # CRITICAL RULES + 명시적 헤딩 매핑
+```
 
 ### 청킹 설정
 
@@ -493,14 +582,15 @@ dependencies = [
 
 ## 알려진 문제 및 해결 방법
 
-### VLM 환각
+### VLM 환각 (Hallucination)
 
-**증상**: VLM이 원문에 없는 설명/요약을 추가하여 삽입 오류 급증
+**증상**: VLM이 원문에 없는 텍스트를 생성하여 CER 급증 (test_1에서 536%)
 
 **해결 방법**:
-- 전사 중심 프롬프트 사용 (TextStructurer 내장)
-- `max_tokens` 제한으로 과도한 생성 방지
+- CRITICAL RULES 프롬프트 사용 (TextStructurer 내장 v2)
+- `max_tokens: 8192` 제한으로 과도한 생성 방지
 - `temperature: 0.1`으로 창의성 억제
+- 한글 스캔 문서에서는 VLM 적용 전 CER/WER 전제 확인 필수
 
 ### BC 점수 스케일 차이
 

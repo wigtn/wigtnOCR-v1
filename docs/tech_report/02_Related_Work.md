@@ -70,7 +70,24 @@ The effectiveness of VLMs depends heavily on prompt design:
   - Benefit: Faithful reproduction, reduced hallucination
 - **Structured prompts**: Specify output format (markdown, JSON, XML)
 
-This study uses a transcription-focused prompt (v2) to minimize hallucination.
+#### 프롬프트 진화 히스토리 (본 연구)
+
+본 연구에서는 프롬프트를 반복 실험을 통해 개선했다:
+
+1. **v1 (초기)**: 일반적인 "document structure expert" 프롬프트
+   - 접근: "You are an expert document extraction assistant"
+   - 결과: Structure F1 = **0%** (헤딩 마커 `#` 미생성)
+   - 문제: 2B 파라미터 소형 모델이 암시적 지시("organized markdown")만으로는 마크다운 구조 요소를 생성하지 못함
+
+2. **v2 (commit `90d516d`)**: CRITICAL RULES + 명시적 헤딩 레벨 매핑
+   - 변경사항:
+     - System/User 프롬프트 분리 (역할 명확화)
+     - "MUST", "NEVER" 강제 지시어 추가
+     - 번호 체계 → 마크다운 레벨 매핑 규칙 명시 (1→`##`, 2.1→`###`, 3.1.1→`####`)
+   - 결과: Structure F1 = **0% → ~79%** (test_3 기준)
+   - 핵심 개선: 모델이 "ALWAYS use # symbols" 규칙을 따르기 시작
+
+3. **교훈**: 2B 규모의 소형 모델에서는 암시적 지시("clean markdown")보다 **명시적 규칙**("MUST use #", "1→##, 2.1→###")이 효과적이다. v1→v2 전환은 test_3의 Structure F1 0%를 관찰한 후, 헤딩 미생성 원인을 분석하여 결정되었다.
 
 ## 2.3 Semantic Chunking and RAG
 
