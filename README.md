@@ -19,11 +19,11 @@ In enterprise RAG pipelines handling complex documents — nested tables, image-
 
 | RQ | Question | Metric | Result |
 |----|----------|--------|--------|
-| **RQ1** | Is OCR extraction quality sufficient for VLM input? | CER, WER | Baseline CER 40-51% ✓ (Korean scan: hallucination risk) |
-| **RQ2** | Does VLM Two-Stage Parsing preserve structure better? | Structure F1 | **0% → 79.25%** (Precision 72%, Recall 88%) |
+| **RQ1** | Is OCR extraction quality sufficient for VLM input? | CER, WER | Image-Advanced CER 33% (Best), Baseline CER 40-51% |
+| **RQ2** | Does VLM Two-Stage Parsing preserve structure better? | Structure F1 | **0% → 77~79%** (Both Advanced, Recall 88%) |
 | **RQ3** | Does structure preservation improve chunking? | BC, CS | BC 0.512, 18 natural section boundaries |
 
-**Trade-off** (test_3 benchmark): +79pp Structure F1, +17pp CER cost, 159× latency
+**Balanced Choice**: Image-Advanced — Best CER (33%), competitive F1 (78%), 17% faster than Text-Advanced
 
 ---
 
@@ -87,8 +87,9 @@ Traditional RAG pipelines rely heavily on plain text extraction, which fails to 
 | **RQ1** | Is OCR extraction quality sufficient for VLM input? | CER, WER | **Prerequisite validation** |
 | **RQ2** | Does VLM Two-Stage Parsing preserve document structure better? | Structure F1 (Precision, Recall) | **Core hypothesis** |
 | **RQ3** | Does structure preservation improve semantic chunking quality? | BC (Boundary Coherence), CS (Chunk Score) | **Downstream impact** |
+| **RQ4** | Does improved chunking improve retrieval precision? | Hit Rate@k, MRR | **End-to-end validation** |
 
-**Logic flow**: CER/WER prerequisite check → VLM structuring → Structure F1 measurement → BC/CS downstream validation
+**Logic flow**: CER/WER prerequisite check → VLM structuring → Structure F1 measurement → BC/CS downstream → Retrieval validation
 
 <div align="center">
 
@@ -100,7 +101,7 @@ Traditional RAG pipelines rely heavily on plain text extraction, which fails to 
 
 <img src="docs/tech_report/figures/fig3_tradeoff_scatter.png" width="600" alt="Trade-off: CER vs Structure F1">
 
-**Fig 2.** Advanced parsers trade lexical accuracy (higher CER) for structure preservation (higher F1) — a worthwhile trade-off for RAG pipelines.
+**Fig 2.** Image-Advanced achieves the best balance: lowest CER (33%) with competitive Structure F1 (78%).
 
 </div>
 
@@ -141,6 +142,14 @@ Uses LangChain's SemanticChunker with embedding-based boundary detection:
 - **Embedding Backend**: BGE-M3 via Infinity API or local sentence-transformers
 - **Automatic Sizing**: Chunk size determined by semantic boundaries
 
+### Model Selection: Qwen3-VL-2B
+
+**Why VL (Vision-Language) over Text-only?**
+- **Alternatives considered**: Qwen3-1.7B-Instruct (text-only) vs Qwen3-VL-2B (vision-language)
+- **Decision rationale**: While a text-only model would suffice for this document parsing task, a separate internal pipeline required multi-modal input. Given GPU constraints (single 96GB card serving both pipelines), we chose the VL model for **versatility** across both use cases.
+- **Result**: 2B VL model achieves Structure F1 77~79%, meeting requirements for both pipelines.
+- **Future plan**: Dedicated document parsing line will transition to Qwen3-1.7B-Instruct with Curriculum Learning to improve structuring performance.
+
 ### MoC-based Quality Metrics (Label-Free)
 
 Measures the downstream impact of parsing structure preservation on chunking quality. Based on the MoC paper (arXiv:2503.09600v2), using **Semantic Distance** instead of Perplexity:
@@ -152,13 +161,14 @@ Measures the downstream impact of parsing structure preservation on chunking qua
 
 **Note**: Semantic Distance BC scores (0.3-0.5) differ from MoC's Perplexity-based scores (0.8+) due to different metric scales.
 
-### Three-Stage Evaluation
+### Four-Stage Evaluation
 
 | Stage | Role | Metrics | Description |
 |-------|------|---------|-------------|
 | **Stage 1** | Prerequisite | CER, WER | Text extraction quality check |
 | **Stage 2** | Core evaluation | Structure F1 (P, R) | Structure preservation measurement |
 | **Stage 3** | Downstream | BC, CS | Chunking quality impact |
+| **Stage 4** | Retrieval (WIP) | Hit Rate@k, MRR | End-to-end retrieval validation |
 
 ---
 
@@ -360,12 +370,12 @@ CER/WER verify that text extraction quality is **sufficient for VLM input**, not
 
 ### RQ1: Prerequisite Check — CER (test_3, Attention Is All You Need)
 
-| Parser | CER | WER | Prerequisite |
-|--------|-----|-----|-------------|
-| Text-Baseline | 51.25% | 57.19% | ✓ |
-| Image-Baseline | **40.79%** | **41.24%** | ✓ (best) |
-| Text-Advanced | 64.11% | 69.34% | ✓ (+13pp trade-off) |
-| Image-Advanced | 57.71% | 63.27% | ✓ (+17pp trade-off) |
+| Parser | CER | WER | Note |
+|--------|-----|-----|------|
+| **Image-Advanced** | **33.09%** | **43.48%** | **Best CER** |
+| Image-Baseline | 40.79% | 51.55% | |
+| Text-Baseline | 51.25% | 62.89% | |
+| Text-Advanced | 64.11% | 75.26% | Highest CER (structural markup cost) |
 
 **Warning**: Korean scanned documents (test_1) showed CER 536% hallucination with Image-Advanced.
 
@@ -383,17 +393,21 @@ CER/WER verify that text extraction quality is **sufficient for VLM input**, not
 - BC score 0.512 with 18 natural chunk divisions (test_3)
 - Markdown headers provide natural semantic boundaries for chunking
 
+### RQ4: Retrieval Impact (In Progress)
+
+Verifying whether improved chunking quality from structure-preserved parsing actually increases retrieval precision (Hit Rate@k, MRR). Expected completion: February 2026.
+
 ### Trade-off Summary
 
-| Metric | Baseline (best) | Advanced (best) | Delta |
-|--------|----------------|----------------|-------|
-| CER | 40.79% | 57.71% | +16.92pp |
-| Structure F1 | 0% | 79.25% | **+79.25pp** |
-| Latency | 0.27s | 42.92s | ×159 |
+| Metric | Text-Baseline | Text-Advanced | Image-Advanced |
+|--------|--------------|---------------|----------------|
+| CER | 51.25% | 64.11% | **33.09%** |
+| Structure F1 | 0% | 79.25% | **77.78%** |
+| Latency | 2.31s | 42.92s | **35.75s** |
 
-**Recommendation**:
-- **Speed-critical**: Baseline (0.27-2.3s)
-- **Structure-critical (RAG)**: Advanced (Structure F1 79%)
+**Recommendation**: **Image-Advanced is the balanced choice** — Best CER (33%), competitive Structure F1 (78% vs 79%), and 17% faster latency than Text-Advanced. For offline document preprocessing pipelines (one-time indexing), both Advanced parsers are viable, but Image-Advanced offers the best overall trade-off.
+- **Speed-critical (real-time)**: Baseline (0.27-2.3s)
+- **Structure-critical (RAG indexing)**: Image-Advanced (F1 78%, CER 33%)
 - **Hybrid**: Route by document complexity
 
 ---
@@ -611,7 +625,7 @@ MIT License
 @software{document_parsing_structure,
   title = {Document Parsing Structure Preservation Test Framework},
   author = {Kim, Hyeongseob},
-  year = {2025},
+  year = {2026},
   url = {https://github.com/Hyeongseob91/test-vlm-document-parsing}
 }
 ```

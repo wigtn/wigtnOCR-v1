@@ -19,11 +19,11 @@
 
 | RQ | 질문 | 지표 | 결과 |
 |----|------|------|------|
-| **RQ1** | OCR 추출 품질이 VLM 입력으로 충분한가? | CER, WER | Baseline CER 40-51% ✓ (한글 스캔: hallucination 위험) |
-| **RQ2** | VLM Two-Stage Parsing이 구조를 더 잘 보존하는가? | Structure F1 | **0% → 79.25%** (Precision 72%, Recall 88%) |
+| **RQ1** | OCR 추출 품질이 VLM 입력으로 충분한가? | CER, WER | Image-Advanced CER 33% (Best), Baseline CER 40-51% |
+| **RQ2** | VLM Two-Stage Parsing이 구조를 더 잘 보존하는가? | Structure F1 | **0% → 77~79%** (Both Advanced, Recall 88%) |
 | **RQ3** | 구조 보존이 청킹 품질을 향상시키는가? | BC, CS | BC 0.512, 18개 자연 섹션 경계 |
 
-**Trade-off** (test_3 기준): +79pp Structure F1, +17pp CER 비용, 159배 지연시간
+**Balanced Choice**: Image-Advanced — Best CER (33%), F1 78%, Text-Advanced 대비 17% 빠른 처리 속도
 
 ---
 
@@ -87,8 +87,9 @@ python -m src.eval_chunking --all
 | **RQ1** | OCR 추출 품질이 VLM 입력으로 충분한가? | CER, WER | **전제 조건 검증** |
 | **RQ2** | VLM Two-Stage Parsing이 문서 구조를 더 잘 보존하는가? | Structure F1 (Precision, Recall) | **핵심 가설 검증** |
 | **RQ3** | 구조 보존이 시맨틱 청킹 품질을 향상시키는가? | BC (Boundary Coherence), CS (Chunk Score) | **다운스트림 효과** |
+| **RQ4** | 개선된 청킹이 검색 정밀도를 높이는가? | Hit Rate@k, MRR | **End-to-end 검증** |
 
-**논리 흐름**: CER/WER 전제 확인 → VLM 구조화 적용 → Structure F1 측정 → BC/CS 다운스트림 검증
+**논리 흐름**: CER/WER 전제 확인 → VLM 구조화 적용 → Structure F1 측정 → BC/CS 다운스트림 → Retrieval 검증
 
 <div align="center">
 
@@ -100,7 +101,7 @@ python -m src.eval_chunking --all
 
 <img src="docs/tech_report/figures/fig3_tradeoff_scatter.png" width="600" alt="Trade-off: CER vs Structure F1">
 
-**Fig 2.** Advanced 파서는 어휘 정확도(높은 CER)를 구조 보존(높은 F1)과 교환합니다 — RAG 파이프라인에서는 가치 있는 트레이드오프입니다.
+**Fig 2.** Image-Advanced가 가장 균형 잡힌 결과: CER 최저(33%)이면서 Structure F1(78%)도 확보.
 
 </div>
 
@@ -141,6 +142,14 @@ LangChain의 SemanticChunker를 사용한 임베딩 기반 경계 탐지:
 - **임베딩 백엔드**: Infinity API의 BGE-M3 또는 로컬 sentence-transformers
 - **자동 크기 결정**: 의미적 경계에 따라 청크 크기 자동 결정
 
+### 모델 선택: Qwen3-VL-2B
+
+**왜 Text-only가 아닌 VL(Vision-Language) 모델인가?**
+- **선택지**: Qwen3-1.7B-Instruct (Text-only) vs Qwen3-VL-2B (Vision-Language)
+- **판단 근거**: 본 연구의 문서 파싱 태스크만 고려하면 Text-only 모델로 충분하나, 사내 운용 중인 또 다른 파이프라인이 Multi-Modal Input을 필요로 했습니다. 인프라 여건상 GPU 1장(96GB)에서 두 파이프라인에 모두 활용할 수 있는 **범용성**을 기준으로 VL 모델을 선택했습니다.
+- **결과**: 2B VL 모델로도 Structure F1 77~79% 달성. 범용성과 성능을 동시에 확보.
+- **향후 계획**: 문서 파싱 전용 라인 고도화 시 Qwen3-1.7B-Instruct로 전환 예정이며, Curriculum Learning 기법을 적용하여 구조화 성능 개선을 검증할 계획.
+
 ### MoC 기반 품질 지표 (라벨 불필요)
 
 파싱 구조 보존이 청킹 품질에 미치는 downstream 영향을 측정합니다. MoC 논문(arXiv:2503.09600v2) 기반, **Semantic Distance**를 사용한 구현:
@@ -152,13 +161,14 @@ LangChain의 SemanticChunker를 사용한 임베딩 기반 경계 탐지:
 
 **참고**: Semantic Distance 기반 BC 점수(0.3-0.5)는 MoC의 Perplexity 기반 점수(0.8+)와 스케일이 다릅니다.
 
-### 3단계 평가 체계
+### 4단계 평가 체계
 
 | 단계 | 역할 | 지표 | 설명 |
 |------|------|------|------|
 | **1단계** | 전제 검증 | CER, WER | 텍스트 추출 품질 확인 |
 | **2단계** | 핵심 평가 | Structure F1 (P, R) | 구조 보존 측정 |
 | **3단계** | 다운스트림 | BC, CS | 청킹 품질 영향 |
+| **4단계** | Retrieval (WIP) | Hit Rate@k, MRR | End-to-end 검색 정밀도 검증 |
 
 ---
 
@@ -359,12 +369,12 @@ CER/WER은 VLM의 성능 평가 지표가 아니라, **텍스트 추출 품질�
 
 ### RQ1: 전제 확인 — CER (test_3, Attention Is All You Need)
 
-| 파서 | CER | WER | 전제 충족 |
-|------|-----|-----|----------|
-| Text-Baseline | 51.25% | 57.19% | ✓ |
-| Image-Baseline | **40.79%** | **41.24%** | ✓ (최선) |
-| Text-Advanced | 64.11% | 69.34% | ✓ (+13pp trade-off) |
-| Image-Advanced | 57.71% | 63.27% | ✓ (+17pp trade-off) |
+| 파서 | CER | WER | 비고 |
+|------|-----|-----|------|
+| **Image-Advanced** | **33.09%** | **43.48%** | **Best CER** |
+| Image-Baseline | 40.79% | 51.55% | |
+| Text-Baseline | 51.25% | 62.89% | |
+| Text-Advanced | 64.11% | 75.26% | 구조 마크업 비용으로 CER 최고 |
 
 **주의**: 한글 스캔 문서(test_1)에서 Image-Advanced CER 536% hallucination 발생.
 
@@ -382,19 +392,23 @@ CER/WER은 VLM의 성능 평가 지표가 아니라, **텍스트 추출 품질�
 - BC score 0.512, 18개 자연 청크 분할 (test_3)
 - 마크다운 헤더가 자연스러운 시맨틱 경계 제공
 
+### RQ4: Retrieval 영향 평가 (진행 중)
+
+구조 보존된 파싱의 개선된 청킹 품질이 실제 검색 정밀도(Hit Rate@k, MRR)를 높이는지 검증하는 실험을 진행 중입니다. 2026년 2월 내 완료 예정.
+
 ### Trade-off 요약
 
 **왜 이 비교가 필요한가?**: 실무에서는 정확도와 구조화 품질 중 하나를 선택해야 합니다. VLM 구조화는 Structure F1을 +79pp 올리지만, CER은 +17pp 증가하고 처리 시간은 159배 느려집니다.
 
-| 지표 | Baseline (최선) | Advanced (최선) | 차이 |
-|------|----------------|----------------|------|
-| CER | 40.79% | 57.71% | +16.92pp |
-| Structure F1 | 0% | 79.25% | **+79.25pp** |
-| Latency | 0.27s | 42.92s | ×159 |
+| 지표 | Text-Baseline | Text-Advanced | Image-Advanced |
+|------|--------------|---------------|----------------|
+| CER | 51.25% | 64.11% | **33.09%** |
+| Structure F1 | 0% | 79.25% | **77.78%** |
+| Latency | 2.31s | 42.92s | **35.75s** |
 
-**시나리오별 추천**:
-- **속도 우선 (실시간 검색)**: Baseline (0.27-2.3s)
-- **구조 우선 (RAG 청킹)**: Advanced (Structure F1 79%)
+**추천**: **Image-Advanced가 가장 균형 잡힌 선택**입니다. CER 최저(33%), Structure F1은 Text-Advanced와 1.5pp 차이(78% vs 79%), Latency도 17% 더 빠릅니다. 오프라인 문서 전처리 파이프라인(인덱싱 1회 수행)에서는 두 Advanced 파서 모두 수용 가능하며, 텍스트 정확도까지 고려하면 Image-Advanced가 유리합니다.
+- **속도 우선 (실시간)**: Baseline (0.27-2.3s)
+- **구조 우선 (RAG 인덱싱)**: Image-Advanced (F1 78%, CER 33%)
 - **하이브리드**: 문서 복잡도에 따라 라우팅
 
 ---
@@ -642,7 +656,7 @@ MIT License
 @software{document_parsing_structure,
   title = {Document Parsing Structure Preservation Test Framework},
   author = {Kim, Hyeongseob},
-  year = {2025},
+  year = {2026},
   url = {https://github.com/Hyeongseob91/test-vlm-document-parsing}
 }
 ```
