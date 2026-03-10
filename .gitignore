@@ -19,10 +19,10 @@ eggs/
 .venv/
 venv/
 ENV/
-.env
 
 # uv
 .uv/
+uv.lock
 
 # IDE
 .vscode/
@@ -30,12 +30,13 @@ ENV/
 *.swp
 *.swo
 
-# Testing
+# Testing & Linting
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
 .nox/
+.ruff_cache/
 
 # Claude Code
 .claude/
@@ -53,12 +54,16 @@ Thumbs.db
 *.tmp
 *.temp
 .tmp/
-.ruff_cache
 
-# Drafts (keep in repo but can be ignored if desired)
-_drafts/
+# Datasets (large binary files)
+datasets/papers/*/doc.pdf
+datasets/papers/*/gt.md
+datasets/documents/*/doc.pdf
+datasets/omnidocbench/images/
 
-# Large Dataset
-*/reference
-data/omnidocbench
-data/
+# Model Checkpoints
+checkpoints/
+
+# Reference materials (local only)
+docs/reference/
+datasets

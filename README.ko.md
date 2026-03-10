@@ -2,226 +2,130 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](pyproject.toml)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](pyproject.toml)
 
 <a href="README.md"><img src="https://img.shields.io/badge/English-gray?style=for-the-badge" alt="English"></a>
 <a href="README.ko.md"><img src="https://img.shields.io/badge/한국어-blue?style=for-the-badge" alt="Korean"></a>
 
 </div>
 
-# 문서 파싱 구조 보존 테스트 프레임워크
+# WigtnOCR
 
-> **"파싱 단계에서 손실된 구조는 영원히 손실된다 — 어떤 downstream 최적화도 이를 복원할 수 없다."**
+**VLM 기반 한국 공공문서 지능형 파서**
 
-고객사 문서(표 안의 표, 이미지 테이블, 다단 레이아웃)의 RAG 파이프라인을 구축하면서 발견한 인사이트: **파싱 단계가 비가역적 병목**이라는 것입니다. 파싱 과정에서 문서 구조가 손실되면, 이후 어떤 downstream 최적화(청킹 전략 변경, 임베딩 모델 교체, Reranker 추가)로도 복원할 수 없습니다. 이 프레임워크는 기존 OCR 방식과 VLM 기반 구조화 파싱을 전체 파이프라인에 걸쳐 비교하여 해당 가설을 정량적으로 검증합니다.
+> Vision-Language Model과 LoRA 파인튜닝을 활용한 한국 공공기관 문서의 구조 보존 파싱 연구
 
-### 주요 결과
+WigtnOCR은 3계층 연구 프레임워크입니다:
 
-| RQ | 질문 | 지표 | 결과 |
-|----|------|------|------|
-| **RQ1** | OCR 추출 품질이 VLM 입력으로 충분한가? | CER, WER | Image-Advanced CER 33% (Best), Baseline CER 40-51% |
-| **RQ2** | VLM Two-Stage Parsing이 구조를 더 잘 보존하는가? | Structure F1 | **0% → 77~79%** (Both Advanced, Recall 88%) |
-| **RQ3** | 구조 보존이 청킹 품질을 향상시키는가? | BC, CS | BC 0.512, 18개 자연 섹션 경계 |
-
-**Balanced Choice**: Image-Advanced — Best CER (33%), F1 78%, Text-Advanced 대비 17% 빠른 처리 속도
+1. **Framework** (`wigtnocr/`) — 설치 가능한 Python 패키지 (`pip install wigtnocr`), 하이브리드 라우팅 파서
+2. **Fine-tuned Model** (`training/`) — 한국 공공문서 특화 Qwen3-VL-2B LoRA 어댑테이션
+3. **Benchmark** (`evaluation/`) — KoGovDoc-Bench + OmniDocBench 평가 체계
 
 ---
 
 ## 빠른 시작
 
 ```bash
-# 의존성 설치
-uv sync
+# 설치
+pip install -e .
 
-# 파서 비교 벤치마크 실행
-python -m src.eval_parsers --all
+# 문서 파싱 (3줄)
+from wigtnocr import WigtnOCR
 
-# 청킹 품질 평가 실행
-python -m src.eval_chunking --all
+ocr = WigtnOCR(mode="hybrid")
+result = ocr.parse("document.pdf")
+print(result.content)
 ```
-
----
-
-## 목차
-
-- [개요](#개요)
-- [주요 기능](#주요-기능)
-- [아키텍처](#아키텍처)
-- [설치](#설치)
-- [사용법](#사용법)
-- [평가 지표](#평가-지표)
-- [실험 결과](#실험-결과)
-- [프로젝트 구조](#프로젝트-구조)
-- [설정](#설정)
-- [API 참조](#api-참조)
-- [기여하기](#기여하기)
-- [라이선스](#라이선스)
-
----
-
-## 개요
-
-### 문제 정의
-
-기존 RAG 파이프라인은 주로 일반 텍스트 추출에 의존하며, 이는 중요한 문서 구조를 보존하지 못합니다:
-
-- **표 구조 손실**: 행-열 관계가 파괴됨
-- **다단 오류**: 2단 레이아웃에서 읽기 순서 혼란
-- **헤더 계층 손실**: 섹션 관계가 보존되지 않음
-- **의미적 단절**: 청킹이 잘못된 위치에서 분리됨
-
-**근본 원인**: 이 모든 증상의 원인은 파이프라인 첫 단계인 **Data Parsing에서의 구조 정보 손실**입니다. 모든 Baseline 파서는 **Structure F1 = 0%** — 텍스트는 추출하지만 마크다운 구조 요소를 전혀 생성하지 못합니다.
-
-### 가설
-
-> 파이프라인의 첫 단계(Data Parsing)에서 구조를 보존하면, 동일한 downstream 처리(청킹, 임베딩, 검색)로도 유의미하게 높은 품질을 달성할 수 있다. 반대로, 파싱에서 구조가 손실되면 어떤 downstream 최적화도 그 한계를 넘을 수 없다.
-
-### 구조화된 데이터 정의
-
-> **구조화된 데이터**란 마크다운 구조 요소(Heading `#`, List `-`/`1.`, Table `|...|`, Code Block `` ``` ``)가 포함된 텍스트를 의미합니다. Ground Truth(GT) 마크다운 파일의 구조 요소 수를 기준으로 측정하며, **Structure F1** (Precision, Recall, F1)으로 정량화합니다.
-
-### 핵심 연구 질문
-
-| RQ | 질문 | 지표 | 역할 |
-|----|------|------|------|
-| **RQ1** | OCR 추출 품질이 VLM 입력으로 충분한가? | CER, WER | **전제 조건 검증** |
-| **RQ2** | VLM Two-Stage Parsing이 문서 구조를 더 잘 보존하는가? | Structure F1 (Precision, Recall) | **핵심 가설 검증** |
-| **RQ3** | 구조 보존이 시맨틱 청킹 품질을 향상시키는가? | BC (Boundary Coherence), CS (Chunk Score) | **다운스트림 효과** |
-| **RQ4** | 개선된 청킹이 검색 정밀도를 높이는가? | Hit Rate@k, MRR | **End-to-end 검증** |
-
-**논리 흐름**: CER/WER 전제 확인 → VLM 구조화 적용 → Structure F1 측정 → BC/CS 다운스트림 → Retrieval 검증
-
-<div align="center">
-
-<img src="docs/tech_report/figures/fig1_structure_f1_comparison.png" width="600" alt="Structure F1 비교: Baseline (0%) vs Advanced (~79%)">
-
-**Fig 1.** Baseline 파서는 문서 구조를 0% 보존하는 반면, VLM 기반 Advanced 파서는 ~79% Structure F1을 달성합니다.
-
-<br>
-
-<img src="docs/tech_report/figures/fig3_tradeoff_scatter.png" width="600" alt="Trade-off: CER vs Structure F1">
-
-**Fig 2.** Image-Advanced가 가장 균형 잡힌 결과: CER 최저(33%)이면서 Structure F1(78%)도 확보.
-
-</div>
-
-> 전체 실험 결과 및 분석은 [Tech Report](docs/tech_report/)를 참고하세요.
-
----
-
-## 주요 기능
-
-### 4가지 파서 아키텍처
-
-4가지 파서를 사용한 통제 실험 설계: **Baseline**(구조 비보존) vs **Advanced**(VLM 기반 구조 보존)을 **Text**(디지털 PDF)와 **Image**(스캔 PDF) 두 가지 추출 경로에서 비교합니다. 이를 통해 추출 방식과 무관하게 구조 보존의 효과를 분리하여 검증합니다.
-
-| 파서 | 설명 | Stage 1 | Stage 2 |
-|------|------|---------|---------|
-| **Text-Baseline** | 디지털 PDF 텍스트 추출 | PyMuPDF (`fitz`) | - |
-| **Image-Baseline** | 스캔 PDF OCR | RapidOCR | - |
-| **Text-Advanced** | 디지털 + VLM 구조화 | PyMuPDF (`fitz`) | Qwen3-VL-2B-Instruct |
-| **Image-Advanced** | 스캔 + VLM 구조화 | RapidOCR | Qwen3-VL-2B-Instruct |
-
-### VLM 프롬프트 전략 (v2 — CRITICAL RULES)
-
-프롬프트는 반복 실험을 통해 진화했습니다:
-
-1. **v1 (초기)**: 일반적인 "document structure expert" → Structure F1 = **0%** (헤딩 마커 미생성)
-2. **v2 (commit `90d516d`)**: CRITICAL RULES + 명시적 헤딩 레벨 매핑 → Structure F1 = **~79%**
-   - System/User 프롬프트 분리
-   - "MUST", "NEVER" 강제 지시어 추가
-   - 번호 → 마크다운 레벨 매핑 (1→`##`, 2.1→`###`, 3.1.1→`####`)
-
-**교훈**: 2B 파라미터 소형 모델에서는 명시적 규칙("MUST use #")이 암시적 지시("clean markdown")보다 효과적입니다.
-
-### 시맨틱 청킹
-
-LangChain의 SemanticChunker를 사용한 임베딩 기반 경계 탐지:
-
-- **Breakpoint 유형**: percentile, standard_deviation, interquartile, gradient
-- **임베딩 백엔드**: Infinity API의 BGE-M3 또는 로컬 sentence-transformers
-- **자동 크기 결정**: 의미적 경계에 따라 청크 크기 자동 결정
-
-### 모델 선택: Qwen3-VL-2B
-
-**왜 Text-only가 아닌 VL(Vision-Language) 모델인가?**
-- **선택지**: Qwen3-1.7B-Instruct (Text-only) vs Qwen3-VL-2B (Vision-Language)
-- **판단 근거**: 본 연구의 문서 파싱 태스크만 고려하면 Text-only 모델로 충분하나, 사내 운용 중인 또 다른 파이프라인이 Multi-Modal Input을 필요로 했습니다. 인프라 여건상 GPU 1장(96GB)에서 두 파이프라인에 모두 활용할 수 있는 **범용성**을 기준으로 VL 모델을 선택했습니다.
-- **결과**: 2B VL 모델로도 Structure F1 77~79% 달성. 범용성과 성능을 동시에 확보.
-- **향후 계획**: 문서 파싱 전용 라인 고도화 시 Qwen3-1.7B-Instruct로 전환 예정이며, Curriculum Learning 기법을 적용하여 구조화 성능 개선을 검증할 계획.
-
-### MoC 기반 품질 지표 (라벨 불필요)
-
-파싱 구조 보존이 청킹 품질에 미치는 downstream 영향을 측정합니다. MoC 논문(arXiv:2503.09600v2) 기반, **Semantic Distance**를 사용한 구현:
-
-| 지표 | 구현 방식 | 해석 |
-|------|----------|------|
-| **BC (Boundary Clarity)** | `1 - cosine_similarity(chunk_i, chunk_i+1)` | 높을수록 좋음 (청크 독립적) |
-| **CS (Chunk Stickiness)** | 청크 그래프의 Structural Entropy | 낮을수록 좋음 (의존성 적음) |
-
-**참고**: Semantic Distance 기반 BC 점수(0.3-0.5)는 MoC의 Perplexity 기반 점수(0.8+)와 스케일이 다릅니다.
-
-### 4단계 평가 체계
-
-| 단계 | 역할 | 지표 | 설명 |
-|------|------|------|------|
-| **1단계** | 전제 검증 | CER, WER | 텍스트 추출 품질 확인 |
-| **2단계** | 핵심 평가 | Structure F1 (P, R) | 구조 보존 측정 |
-| **3단계** | 다운스트림 | BC, CS | 청킹 품질 영향 |
-| **4단계** | Retrieval (WIP) | Hit Rate@k, MRR | End-to-end 검색 정밀도 검증 |
 
 ---
 
 ## 아키텍처
 
+### 하이브리드 라우팅 파이프라인
+
+WigtnOCR은 문서 복잡도 분석을 통해 자동으로 파서를 선택합니다:
+
 ```
-+--------------------------------------------------------------------+
-|                     문서 입력 (PDF)                                  |
-+--------------------------------------------------------------------+
-                                |
-            +-------------------+-------------------+
-            |                                       |
-            v                                       v
-+------------------------+             +------------------------+
-|     디지털 PDF?         |             |     스캔 PDF?          |
-|   (텍스트 레이어 있음)    |             |    (이미지 기반)        |
-+------------------------+             +------------------------+
-            |                                       |
-╔════════════════════════════════════════════════════════════════════╗
-║            ★ 파싱 단계 (Bottleneck) ★                            ║
-║  구조 보존됨 → 품질이 downstream으로 전파                          ║
-║  구조 손실됨 → 복원 불가능                                        ║
-╠════════════════════════════════════════════════════════════════════╣
-║                                                                  ║
-║   +------+------+                         +------+------+        ║
-║   |             |                         |             |        ║
-║   v             v                         v             v        ║
-║ +---------+  +-----------+          +-----------+  +----------+  ║
-║ |  Text   |  |   Text    |          |   Image   |  |  Image   |  ║
-║ | Baseline|  |  Advanced |          |  Baseline |  | Advanced |  ║
-║ | PyMuPDF |  |+VLM 구조화 |         |  RapidOCR |  |+VLM 구조화| ║
-║ +---------+  +-----------+          +-----------+  +----------+  ║
-║   구조 미보존   구조 보존              구조 미보존    구조 보존     ║
-╚════════════════════════════════════════════════════════════════════╝
-            |                                       |
-            v                                       v
-+--------------------------------------------------------------------+
-|                    시맨틱 청킹 레이어                                 |
-|              (LangChain SemanticChunker + BGE-M3)                   |
-+--------------------------------------------------------------------+
-                                |
-                                v
-+--------------------------------------------------------------------+
-|              3단계 평가 체계 (Impact Cascade)                       |
-|   +-----------+   +------------+   +-----------+   +----------+    |
-|   | RQ1:      |   | RQ2:       |   | RQ3:      |   | Future:  |   |
-|   | CER, WER  | → | Structure  | → | BC, CS    | → | HR@k,MRR |   |
-|   |(전제 검증) |   | F1 (P,R)   |   |(다운스트림)|   |(검색)     |   |
-|   +-----------+   +------------+   +-----------+   +----------+    |
-|                                                                    |
-|   파싱 품질 ──────────────────────→ Downstream 품질                  |
-+--------------------------------------------------------------------+
+PDF 입력
+    |
+    v
+[복잡도 분석]
+  스캔 여부 / 표 개수 / 이미지 개수 / 텍스트 밀도
+    |
+    +-- 단순 (score < 0.5) --> CPU: PyMuPDF 또는 RapidOCR
+    |
+    +-- 복잡 (score >= 0.5) --> GPU: Two-Stage (추출 + VLM 구조화)
 ```
+
+### 4-Parser 설계
+
+| 파서 | Stage 1 (추출) | Stage 2 (구조화) | 용도 |
+|------|---------------|-----------------|------|
+| **Text-Baseline** | PyMuPDF | - | 디지털 PDF, 속도 우선 |
+| **Image-Baseline** | RapidOCR | - | 스캔 PDF, 속도 우선 |
+| **Text-Advanced** | PyMuPDF | Qwen3-VL-2B | 디지털 PDF, 구조 우선 |
+| **Image-Advanced** | RapidOCR | Qwen3-VL-2B | 스캔 PDF, 구조 우선 |
+
+### VLM 서빙
+
+듀얼 RTX PRO 6000 (각 96GB)에서 vLLM으로 3단계 모델 서빙:
+
+| 모델 | 포트 | 용도 |
+|------|------|------|
+| Qwen3-VL-30B-A3B-Thinking | 8000 | Pseudo GT 생성 |
+| Qwen3-VL-8B-Thinking-FP8 | 8004 | 검증 / Ablation |
+| Qwen3-VL-2B-Instruct | 8010 | 프로덕션 추론 + LoRA 베이스 |
+
+---
+
+## 3계층 기여 구조
+
+### Layer 1: Framework (`wigtnocr/`)
+
+설치 가능한 Python 패키지:
+- **하이브리드 라우팅** — 복잡도 기반 자동 파서 선택
+- **Two-stage 파이프라인** — 텍스트 추출 + VLM 구조화
+- **시맨틱 청킹** — LangChain SemanticChunker + BGE-M3 임베딩
+- **MoC 기반 메트릭** — BC (Boundary Clarity), CS (Chunk Stickiness)
+
+```python
+from wigtnocr import WigtnOCR, TwoStageParser, HybridParser
+
+# 상위 API
+ocr = WigtnOCR(mode="hybrid")
+result = ocr.parse("document.pdf")
+
+# 하위 API
+parser = TwoStageParser(
+    structurer_api_url="http://localhost:8010/v1/chat/completions",
+    structurer_model="qwen3-vl-2b-instruct",
+)
+result = parser.parse_auto(pdf_bytes)
+```
+
+### Layer 2: Fine-tuned Model (`training/`)
+
+Qwen3-VL-2B LoRA 파인튜닝 파이프라인:
+
+| 파라미터 | 값 |
+|---------|-----|
+| 베이스 모델 | Qwen3-VL-2B-Instruct |
+| LoRA rank (r) | 64 |
+| LoRA alpha | 128 |
+| 타겟 모듈 | q_proj, v_proj, k_proj, o_proj |
+| Dropout | 0.05 |
+
+**Pseudo GT 생성**: Claude/GPT-4o가 문서에서 구조화된 마크다운을 생성하며, CER < 5%일 때 자동 승인됩니다.
+
+### Layer 3: Benchmark (`evaluation/`)
+
+| 벤치마크 | 언어 | 문서 수 | 목적 |
+|---------|------|---------|------|
+| **KoGovDoc-Bench** | 한국어 | 공공기관 문서 11개 | 도메인 특화 평가 |
+| **OmniDocBench** | 다국어 | 다수 | 범용 일반화 평가 |
+| **DocVQA** | 영어 | 다수 | QA 기반 평가 (예정) |
+
+**평가 지표**: CER, WER, Structure F1, TEDS, BC, CS
 
 ---
 
@@ -229,418 +133,153 @@ LangChain의 SemanticChunker를 사용한 임베딩 기반 경계 탐지:
 
 ### 사전 요구사항
 
-- Python 3.13+
+- Python 3.11+
 - CUDA 지원 GPU (VLM 추론용)
-- MeCab (한국어 토큰화용)
 
-### 실험 하드웨어
-
-| 구성 요소 | 사양 |
-|----------|------|
-| GPU | NVIDIA RTX PRO 6000 Blackwell Server Edition × 2 (각 96GB VRAM) |
-| RAM | 128GB DDR5 |
-| Storage | SSD |
-
-### uv 사용 (권장)
+### 설치 방법
 
 ```bash
-git clone https://github.com/Hyeongseob91/test-vlm-document-parsing.git
-cd test-vlm-document-parsing
-
-# uv로 설치
-uv sync
-
-# 한국어 NLP 지원 설치
-uv sync --extra korean
-```
-
-### pip 사용
-
-```bash
+# 코어만
 pip install -e .
 
-# 한국어 지원
-pip install -e ".[korean]"
+# OCR 지원 (RapidOCR)
+pip install -e ".[ocr]"
 
-# 모든 기능
+# 학습 의존성
+pip install -e ".[training]"
+
+# 평가 의존성
+pip install -e ".[evaluation]"
+
+# 전체
 pip install -e ".[all]"
 ```
 
-### 외부 서비스
+### VLM 서버
 
 ```bash
-# 1. 임베딩 API (Infinity + BGE-M3)
-infinity_emb v2 --model-id BAAI/bge-m3 --port 8001
-
-# 2. VLM API (Advanced 파서용)
-# Qwen3-VL-2B-Instruct를 http://localhost:8005에 배포
-```
-
-### MeCab 설치 (Ubuntu)
-
-```bash
-sudo apt-get install mecab mecab-ko mecab-ko-dic libmecab-dev
-pip install mecab-python3
+# vLLM 사용 (전체 설정은 docker-compose.vlm.yml 참고)
+python -m vllm.entrypoints.openai.api_server \
+    --model Qwen/Qwen3-VL-2B-Instruct \
+    --served-model-name qwen3-vl-2b-instruct \
+    --port 8010
 ```
 
 ---
 
 ## 사용법
 
-### 1. 파서 비교 (CER/WER/Structure F1)
+### 문서 파싱
 
 ```bash
-# 모든 테스트 데이터에 대해 모든 파서 실행
-python -m src.eval_parsers --all
+# 전체 데이터셋 파서 평가
+python -m evaluation.cli parse --all
 
-# 단일 파일 테스트
-python -m src.eval_parsers --input data/test_1/test.pdf --gt data/test_1/gt.md
-
-# Baseline만 테스트 (VLM 기반 Advanced 파서 스킵)
-python -m src.eval_parsers --all --skip-advanced
-
-# Text 파서만 테스트 (Image/RapidOCR 파서 스킵)
-python -m src.eval_parsers --all --skip-image
+# 단일 문서
+python -m evaluation.cli parse --input datasets/documents/kogov_001/doc.pdf
 ```
 
-**출력**: `results/test_X/`에 파싱 결과 파일, `evaluation.json`, `README.md` 요약
-
-### 2. 청킹 품질 평가 (BC/CS)
+### 청킹 평가
 
 ```bash
-# 모든 파싱 결과 평가
-python -m src.eval_chunking --all
+# 청킹 품질 평가
+python -m evaluation.cli chunk --all
 
-# 특정 breakpoint 설정 사용
-python -m src.eval_chunking --all \
-    --breakpoint-type percentile \
-    --breakpoint-threshold 90
-
-# Mock 모드 (임베딩 API 없이 테스트)
-python -m src.eval_chunking --all --use-mock
-
-# 특정 디렉토리 평가
-python -m src.eval_chunking --parsed-dir results/test_1/
+# Mock 모드 (임베딩 API 없이)
+python -m evaluation.cli chunk --all --use-mock
 ```
 
-**출력**: 각 테스트 폴더에 `chunking.json` (파서별 BC/CS 점수)
-
-### 3. Streamlit 대시보드
+### 학습
 
 ```bash
-streamlit run src/dashboard_analysis.py --server.port 8501
+# Pseudo Ground Truth 생성
+python scripts/generate_pseudo_gt.py
+
+# LoRA 파인튜닝 실행
+python -m training.lora_trainer --config configs/training.yaml
 ```
 
 ---
 
 ## 평가 지표
 
-### 1단계: 전제 조건 검증 (CER, WER)
-
-CER/WER은 VLM의 성능 평가 지표가 아니라, **텍스트 추출 품질이 VLM 입력으로 충분한지** 확인하는 전제 조건 지표입니다.
-
-| 지표 | 공식 | 설명 |
-|------|------|------|
-| **CER** | `(S + D + I) / N` | 문자 오류율 |
-| **WER** | `(S + D + I) / N` | 단어 오류율 (형태소 토큰화 적용) |
-
-### 2단계: 구조 보존 (Structure F1)
-
-| 지표 | 공식 | 설명 |
-|------|------|------|
-| **Precision** | `TP / (TP + FP)` | 생성한 구조 요소가 정확한가? (hallucination 모니터링) |
-| **Recall** | `TP / (TP + FN)` | GT 구조 요소를 검출했는가? (누락 모니터링) |
-| **Structure F1** | `2 * P * R / (P + R)` | Precision과 Recall의 조화평균 |
-
-**왜 Precision/Recall 분리가 필요한가?**: F1만으로는 과잉 생성(FP)과 누락(FN)을 구분할 수 없습니다. VLM은 hallucination으로 구조를 과잉 생성할 수 있으므로 Precision 모니터링이 중요합니다.
-
-**평가 대상 구조 요소**: Heading (`^#{1,6}\s+`), List (`^[-*+]\s+`, `^\d+\.\s+`), Table (`^\|.+\|$`)
-
-### 3단계: 청킹 품질 (MoC 기반, Semantic Distance)
-
-| 지표 | 공식 | 설명 |
-|------|------|------|
-| **BC** | `1 - cosine_similarity` | 높을수록 좋음 (청크 독립적) |
-| **CS** | `-Σ (h_i/2m) * log2(h_i/2m)` | 낮을수록 좋음 (Structural Entropy) |
-
----
-
-## 실험 결과
-
-### RQ1: 전제 확인 — CER (test_3, Attention Is All You Need)
-
-| 파서 | CER | WER | 비고 |
-|------|-----|-----|------|
-| **Image-Advanced** | **33.09%** | **43.48%** | **Best CER** |
-| Image-Baseline | 40.79% | 51.55% | |
-| Text-Baseline | 51.25% | 62.89% | |
-| Text-Advanced | 64.11% | 75.26% | 구조 마크업 비용으로 CER 최고 |
-
-**주의**: 한글 스캔 문서(test_1)에서 Image-Advanced CER 536% hallucination 발생.
-
-### RQ2: 구조 보존 — Structure F1 (test_3)
-
-| 파서 | Precision | Recall | F1 | TP | FP | FN |
-|------|-----------|--------|-----|----|----|-----|
-| Text-Baseline | 0% | 0% | 0% | 0 | 11 | 24 |
-| Image-Baseline | 0% | 0% | 0% | 0 | 0 | 24 |
-| **Text-Advanced** | **72.41%** | **87.50%** | **79.25%** | 21 | 8 | 3 |
-| Image-Advanced | 70.00% | 87.50% | 77.78% | 21 | 9 | 3 |
-
-### RQ3: 다운스트림 효과
-
-- BC score 0.512, 18개 자연 청크 분할 (test_3)
-- 마크다운 헤더가 자연스러운 시맨틱 경계 제공
-
-### RQ4: Retrieval 영향 평가 (진행 중)
-
-구조 보존된 파싱의 개선된 청킹 품질이 실제 검색 정밀도(Hit Rate@k, MRR)를 높이는지 검증하는 실험을 진행 중입니다. 2026년 2월 내 완료 예정.
-
-### Trade-off 요약
-
-**왜 이 비교가 필요한가?**: 실무에서는 정확도와 구조화 품질 중 하나를 선택해야 합니다. VLM 구조화는 Structure F1을 +79pp 올리지만, CER은 +17pp 증가하고 처리 시간은 159배 느려집니다.
-
-| 지표 | Text-Baseline | Text-Advanced | Image-Advanced |
-|------|--------------|---------------|----------------|
-| CER | 51.25% | 64.11% | **33.09%** |
-| Structure F1 | 0% | 79.25% | **77.78%** |
-| Latency | 2.31s | 42.92s | **35.75s** |
-
-**추천**: **Image-Advanced가 가장 균형 잡힌 선택**입니다. CER 최저(33%), Structure F1은 Text-Advanced와 1.5pp 차이(78% vs 79%), Latency도 17% 더 빠릅니다. 오프라인 문서 전처리 파이프라인(인덱싱 1회 수행)에서는 두 Advanced 파서 모두 수용 가능하며, 텍스트 정확도까지 고려하면 Image-Advanced가 유리합니다.
-- **속도 우선 (실시간)**: Baseline (0.27-2.3s)
-- **구조 우선 (RAG 인덱싱)**: Image-Advanced (F1 78%, CER 33%)
-- **하이브리드**: 문서 복잡도에 따라 라우팅
+| 단계 | 지표 | 공식 | 역할 |
+|------|------|------|------|
+| **전제 검증** | CER | `(S+D+I)/N` | 텍스트 추출 품질 |
+| **전제 검증** | WER | `(S+D+I)/N` | 단어 수준 오류율 |
+| **핵심** | Structure F1 | `2*P*R/(P+R)` | 구조 보존도 |
+| **핵심** | TEDS | Tree Edit Distance Similarity | 표 구조 정확도 |
+| **다운스트림** | BC | `1 - cosine_sim(chunk_i, chunk_i+1)` | 경계 독립성 |
+| **다운스트림** | CS | Structural Entropy | 청크 의존도 |
 
 ---
 
 ## 프로젝트 구조
 
 ```
-test-vlm-document-parsing/
-├── src/
-│   ├── eval_parsers.py          # CLI: 파서 비교 (CER/WER/F1)
-│   ├── eval_chunking.py         # CLI: 청킹 평가 (BC/CS)
-│   ├── dashboard_analysis.py    # Streamlit 대시보드
-│   │
-│   ├── parsers/                 # 파서 구현
-│   │   ├── ocr_parser.py        # Text-Baseline (PyMuPDF), Image-Baseline (RapidOCR)
-│   │   ├── text_structurer.py   # VLM 기반 텍스트 구조화 (Qwen3-VL-2B)
-│   │   └── two_stage_parser.py  # Advanced 파서 (Baseline + VLM)
-│   │
-│   ├── chunking/                # 시맨틱 청킹 모듈
-│   │   ├── chunker.py           # LangChain SemanticChunker 래퍼
-│   │   ├── embeddings.py        # LangChain 호환 API 임베딩
-│   │   ├── metrics.py           # BC/CS 지표 (Semantic Distance)
-│   │   └── dashboard_export.py  # 대시보드 데이터 내보내기 유틸리티
-│   │
-│   ├── dashboard/               # 대시보드 컴포넌트
-│   │   └── styles.py            # CSS 스타일
-│   │
-│   └── evaluation/              # 통합 평가 인터페이스
-│       └── __init__.py
-│
-├── data/
-│   ├── test_1/                  # 한국어 정부 문서
-│   ├── test_2/                  # 영수증 이미지
-│   ├── test_3/                  # 영어 학술 논문
-│   └── test_4/                  # 추가 테스트 문서
-│
-├── results/                     # 평가 출력
-│   ├── test_1/
-│   │   ├── text_baseline_output.txt
-│   │   ├── image_baseline_output.txt
-│   │   ├── text_advanced_output.txt
-│   │   ├── image_advanced_output.txt
-│   │   ├── evaluation.json      # 파싱 지표
-│   │   ├── chunking.json        # 청킹 지표
-│   │   └── README.md            # 요약
-│   └── ...
-│
-├── docs/
-│   └── tech_report/             # 전체 기술 보고서 (9개 섹션 + 부록)
-│
-├── tests/
-│   └── test_chunking_cli.py     # 청킹 모듈 단위 테스트
-│
-├── pyproject.toml               # 프로젝트 설정
-├── README.md                    # 영어 문서
-└── README.ko.md                 # 한국어 문서
+wigtnocr/                          # PyPI 패키지 (pip install wigtnocr)
+    __init__.py                    # WigtnOCR 메인 클래스 (3줄 API)
+    parsers/
+        base.py                    # 추상 BaseParser, ParseResult
+        pymupdf.py                 # 텍스트 추출 (PyMuPDF)
+        rapidocr.py                # 이미지 OCR (RapidOCR)
+        vlm.py                     # VLM 구조화 (TextStructurer)
+    pipeline/
+        two_stage.py               # Two-stage 파서 (추출 + VLM)
+        hybrid.py                  # 하이브리드 라우터 (복잡도 기반)
+    chunking/
+        chunker.py                 # SemanticChunker (LangChain)
+        embeddings.py              # API 임베딩 클라이언트 (BGE-M3)
+        metrics.py                 # BC/CS 메트릭
+    utils/
+        markdown.py                # 마크다운 유틸리티
+
+training/                          # LoRA 파인튜닝 파이프라인
+    config.py                      # LoRA/Training 데이터클래스
+    gt_generator.py                # Pseudo GT 생성 (Claude/GPT-4o)
+    data_prep.py                   # 학습 데이터 준비
+    lora_trainer.py                # LoRA 파인튜닝 진입점
+    prompts/
+        templates.py               # GT/학습용 시스템 프롬프트
+
+evaluation/                        # 벤치마크 및 평가 체계
+    metrics/
+        cer.py                     # CER, WER (jiwer)
+        structure.py               # Structure F1
+        teds.py                    # Table Edit Distance Similarity
+        chunking.py                # BC/CS 래퍼
+    benchmarks/
+        kogovdoc.py                # KoGovDoc-Bench 로더
+        omnidocbench.py            # OmniDocBench 어댑터
+        docvqa.py                  # DocVQA (예정)
+    runners/
+        parser_eval.py             # 파서 평가 러너
+        chunking_eval.py           # 청킹 평가 러너
+    cli.py                         # 통합 CLI (parse/chunk)
+
+configs/                           # YAML 설정
+    default.yaml                   # VLM 서버 엔드포인트
+    training.yaml                  # LoRA 하이퍼파라미터
+    evaluation.yaml                # 평가 설정
+
+datasets/                          # 벤치마크 데이터셋
+    papers/                        # 영어 학술 논문 (39편)
+    documents/                     # 한국 공공문서 (11건)
+    omnidocbench/                  # OmniDocBench
+
+scripts/                           # 유틸리티 스크립트
+    generate_pseudo_gt.py          # Pseudo GT 생성 스크립트
+    setup_datasets.py              # 데이터셋 셋업 헬퍼
 ```
-
----
-
-## 설정
-
-### VLM 설정
-
-```yaml
-vlm_structurer:
-  model: "Qwen3-VL-2B-Instruct"
-  api_url: "http://localhost:8005/v1/chat/completions"
-  temperature: 0.1
-  max_tokens: 8192
-  prompt_version: "v2"  # CRITICAL RULES + 명시적 헤딩 매핑
-```
-
-### 청킹 설정
-
-```python
-from src.chunking import ChunkerConfig, create_chunker
-
-config = ChunkerConfig(
-    breakpoint_threshold_type="percentile",  # percentile, standard_deviation, interquartile, gradient
-    breakpoint_threshold_amount=95.0,        # 임계값
-    min_chunk_size=None,                     # 최소 청크 크기 (선택)
-)
-
-chunker = create_chunker(
-    config=config,
-    embedding_api_url="http://localhost:8001/embeddings",
-    embedding_model="BAAI/bge-m3",
-)
-```
-
-### 임베딩 클라이언트 옵션
-
-```python
-from src.chunking.metrics import create_embedding_client
-
-# API 기반 (Infinity + BGE-M3)
-client = create_embedding_client(
-    api_url="http://localhost:8001/embeddings",
-    model="BAAI/bge-m3"
-)
-
-# 로컬 sentence-transformers
-client = create_embedding_client(
-    model="jhgan/ko-sroberta-multitask"
-)
-
-# 테스트용 Mock
-client = create_embedding_client(use_mock=True)
-```
-
----
-
-## API 참조
-
-### 파서 클래스
-
-```python
-from src.parsers import (
-    OCRParser,          # Text-Baseline (PyMuPDF)
-    RapidOCRParser,     # Image-Baseline (RapidOCR)
-    TwoStageParser,     # Advanced 파서 (Baseline + VLM)
-    TextStructurer,     # VLM 텍스트 구조화
-)
-
-# Two-Stage Parser (Advanced)
-parser = TwoStageParser(
-    structurer_api_url="http://localhost:8005/v1/chat/completions",
-    structurer_model="qwen3-vl-2b-instruct",
-)
-
-# PDF 타입 자동 감지 후 파싱
-result = parser.parse_auto(pdf_bytes)
-print(f"내용: {result.content}")
-print(f"Stage 1 ({result.stage1_parser}): {result.stage1_time:.2f}s")
-print(f"Stage 2 (VLM): {result.stage2_time:.2f}s")
-```
-
-### 청킹 및 평가
-
-```python
-from src.chunking import (
-    SemanticChunker,
-    ChunkerConfig,
-    evaluate_chunking,
-    create_embedding_client,
-)
-
-# 텍스트 청킹
-config = ChunkerConfig(breakpoint_threshold_type="percentile")
-chunker = SemanticChunker(config, embedding_api_url="http://localhost:8001/embeddings")
-chunks = chunker.chunk(text, document_id="doc1")
-
-# 청킹 품질 평가
-client = create_embedding_client(api_url="http://localhost:8001/embeddings")
-metrics = evaluate_chunking(chunks, embedding_client=client)
-
-print(f"BC: {metrics.bc_score.score:.4f}")
-print(f"CS: {metrics.cs_score.score:.4f}")
-```
-
----
-
-## 의존성
-
-주요 의존성:
-
-```toml
-[project]
-dependencies = [
-    "PyMuPDF>=1.24.0",           # Text-Baseline 파서
-    "rapidocr-pdf>=0.4.0",       # Image-Baseline 파서
-    "rapidocr-onnxruntime>=1.4.0",
-    "langchain-experimental>=0.3.0",  # SemanticChunker
-    "langchain-core>=0.3.0",
-    "httpx>=0.27.0",             # API 클라이언트
-    "jiwer>=3.0.0",              # CER/WER 계산
-    "numpy>=1.24.0",
-    "streamlit>=1.45.0",         # 대시보드
-    "plotly>=5.18.0",            # 시각화
-]
-```
-
----
-
-## 알려진 문제 및 해결 방법
-
-### VLM 환각 (Hallucination)
-
-**증상**: VLM이 원문에 없는 텍스트를 생성하여 CER 급증 (test_1에서 536%)
-
-**해결 방법**:
-- CRITICAL RULES 프롬프트 사용 (TextStructurer 내장 v2)
-- `max_tokens: 8192` 제한으로 과도한 생성 방지
-- `temperature: 0.1`으로 창의성 억제
-- 한글 스캔 문서에서는 VLM 적용 전 CER/WER 전제 확인 필수
-
-### BC 점수 스케일 차이
-
-**증상**: BC 점수가 MoC 논문(0.8+)보다 낮음(0.3-0.5)
-
-**원인**: Semantic Distance(1-cosine_similarity)와 Perplexity 기반 접근의 스케일 차이
-
-**해결 방법**: BC 점수 해석 가이드 참고 (0.3-0.5가 정상 범위)
-
-### RapidOCR 한국어 인식
-
-**증상**: 한국어 문서에서 인식률이 낮음
-
-**해결 방법**:
-- 스캔 품질 개선 (DPI 증가)
-- 한국어 문서는 Text-Advanced 또는 Text-Baseline 우선 사용
-
----
-
-## 기여하기
-
-1. 저장소 포크
-2. 기능 브랜치 생성 (`git checkout -b feature/amazing-feature`)
-3. 변경사항 커밋 (`git commit -m 'Add amazing feature'`)
-4. 브랜치에 푸시 (`git push origin feature/amazing-feature`)
-5. Pull Request 열기
 
 ---
 
 ## 참고 문헌
 
-- [MoC 논문](https://arxiv.org/abs/2503.09600) - Mixtures of Chunking (BC/CS 지표)
-- [LangChain SemanticChunker](https://python.langchain.com/docs/how_to/semantic-chunker/)
-- [BGE-M3](https://huggingface.co/BAAI/bge-m3) - 다국어 임베딩 모델
-- [PyMuPDF](https://pymupdf.readthedocs.io/) - PDF 텍스트 추출
-- [RapidOCR](https://github.com/RapidAI/RapidOCR) - OCR 엔진
+- [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct) — 베이스 VLM
+- [MoC 논문](https://arxiv.org/abs/2503.09600) — BC/CS 청킹 메트릭
+- [OmniDocBench](https://github.com/opendatalab/OmniDocBench) — 문서 벤치마크
+- [vLLM](https://github.com/vllm-project/vllm) — VLM 서빙 엔진
 
 ---
 
@@ -648,15 +287,13 @@ dependencies = [
 
 MIT License
 
----
-
 ## 인용
 
 ```bibtex
-@software{document_parsing_structure,
-  title = {Document Parsing Structure Preservation Test Framework},
+@software{wigtnocr,
+  title = {WigtnOCR: VLM-based Korean Government Document Intelligence Parser},
   author = {Kim, Hyeongseob},
   year = {2026},
-  url = {https://github.com/Hyeongseob91/test-vlm-document-parsing}
+  url = {https://github.com/Hyeongseob91/wigtnocr}
 }
 ```
