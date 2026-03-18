@@ -13,90 +13,76 @@
 
 **Pseudo-Label Distillation for Structure-Preserving Document Parsing**
 
-> Can a 2B VLM match a 30B model's document parsing quality — and does that quality actually improve retrieval?
+> Distill a 30B VLM into a 2B model that matches its document parsing quality — and prove the structured output improves RAG chunking and retrieval.
 
-WigtnOCR is a research framework that distills document parsing capabilities from a large teacher VLM (Qwen3-VL-30B) into a compact student model (Qwen3-VL-2B) via pseudo-labeling and LoRA fine-tuning, with a two-step evaluation proving the causal chain from parsing quality to retrieval performance.
+WigtnOCR is a research framework that distills document parsing capabilities from Qwen3-VL-30B (teacher) into Qwen3-VL-2B (student) via quality-filtered pseudo-labeling and LoRA fine-tuning. Evaluated on OmniDocBench (international benchmark) and KoGovDoc (Korean government documents) with a two-step causal evaluation proving: **better parsing → better chunks → better retrieval**.
 
 ---
 
 ## Key Results
 
-### Parsing Quality (RQ1-2)
+### OmniDocBench — Distillation (RQ1-3)
 
-| Parser | CER ↓ | Structure F1 ↑ | TEDS ↑ | Latency |
-|--------|-------|----------------|--------|---------|
-| PyMuPDF (baseline) | 40.8% | 0% | — | 0.3s |
-| Qwen3-VL-2B (base) | ___ | ___ | ___ | ___s |
-| **WigtnOCR-2B (LoRA)** | ___ | ___ | ___ | ___s |
-| Qwen3-VL-30B (teacher) | ___ | ___ | ___ | ___s |
+| Metric | 2B Base | **WigtnOCR-2B** | 30B Teacher | Marker | Direction |
+|--------|:-------:|:---------------:|:-----------:|:------:|:---------:|
+| Text NED | 0.364 | **0.288** | 0.289 | 0.218 | lower=better |
+| Table TEDS | 0.561 | **0.649** | 0.523 | 0.586 | higher=better |
+| Formula CDM F1 | 0.865 | **0.884** | 0.939 | 0.863 | higher=better |
+| Reading Order | 0.300 | **0.211** | 0.227 | 0.165 | lower=better |
+| Skip Rate | 18.8% | **5.8%** | 5.5% | 0.4% | lower=better |
 
-### Step 1: Structure → Chunking Quality (RQ3)
+**Student matches or exceeds teacher in 4/5 categories.** Table TEDS surpasses teacher by +12.6pp.
 
-VLM-structured markdown produces measurably better chunks than traditional OCR:
+### KoGovDoc — Chunking Quality (RQ4, in progress)
 
-| Parser | Header BC ↑ | Semantic BC ↑ | Fixed BC ↑ |
-|--------|------------|--------------|-----------|
-| PyMuPDF | N/A | ___ | ___ |
-| WigtnOCR-2B | ___ | ___ | ___ |
-| 30B teacher | ___ | ___ | ___ |
+BC/CS evaluation using MoC framework (Zhao et al., ACL 2025) with Qwen2.5-1.5B for perplexity.
 
-### Step 2: Chunking → Retrieval Performance (RQ4)
+| Parser | Strategy | BC ↑ | CS ↓ |
+|--------|----------|:----:|:----:|
+| **WigtnOCR-2B** | Header-based | ___ | ___ |
+| WigtnOCR-2B | Semantic | ___ | ___ |
+| PaddleOCR | Semantic | ___ | ___ |
+| PaddleOCR | Fixed-size | ___ | ___ |
 
-Better chunks yield better retrieval — the causal chain holds:
+### KoGovDoc — Retrieval Performance (RQ5, planned)
 
 | Parser | Hit@1 ↑ | Hit@5 ↑ | MRR ↑ | nDCG@10 ↑ |
 |--------|---------|---------|-------|-----------|
-| PyMuPDF | ___ | ___ | ___ | ___ |
 | WigtnOCR-2B | ___ | ___ | ___ | ___ |
-| 30B teacher | ___ | ___ | ___ | ___ |
-
-### Distillation (RQ5)
-
-WigtnOCR-2B (LoRA) achieves ___% of the 30B teacher's retrieval performance at ___x faster inference.
+| PaddleOCR | ___ | ___ | ___ | ___ |
 
 ---
 
 ## How It Works
 
-### Three-Model Architecture
+### Four-Stage Pipeline
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  Stage 1: GT Generation    Stage 2: Validation    Stage 3-4  │
-│                                                              │
-│  PDF Pages                 GT Markdown            Validated  │
-│      ↓                         ↓                  Data       │
-│  Qwen3-VL-30B      →     Qwen3.5-122B     →     LoRA Train │
-│  (Teacher VLM)            (Judge LLM)            Qwen3-VL-2B│
-│      ↓                         ↓                     ↓      │
-│  Markdown GT               Score 1-5            WigtnOCR-2B │
-│                                                              │
-│  4,501 pages              74-75% pass rate      Production   │
-│  49 documents             5-dim quality scoring  deployment  │
-└──────────────────────────────────────────────────────────────┘
+Stage 1: Pseudo GT Generation
+    PDF pages → Qwen3-VL-30B (teacher) → Structured Markdown
+    4,501 pages, 49 documents (Korean + English)
+
+Stage 2: Quality Validation
+    GT Markdown → Qwen3.5-122B (judge, text-only) → Score 1-5
+    74-75% pass rate, 5-dimension quality scoring
+
+Stage 3: Training Data Preparation
+    Quality filtering (score >= 3) + bias correction + train/val split
+
+Stage 4: LoRA Fine-tuning
+    Qwen3-VL-2B + LoRA (rank=8, alpha=32) → WigtnOCR-2B
+    ms-swift, DeepSpeed ZeRO-2, 3 epochs
 ```
 
-### Two-Step Causal Evaluation
-
-We don't just compare parsers end-to-end. We isolate each causal link:
+### Two-Step Causal Evaluation (KoGovDoc)
 
 ```
-Step 1: Does better structure make better chunks?
-┌──────────┐     ┌──────────────┐     ┌────────┐
-│ Parser   │ ──► │ 3 Chunkers   │ ──► │ BC/CS  │
-│ (varied) │     │ (controlled) │     │ scores │
-└──────────┘     └──────────────┘     └────────┘
-  PyMuPDF          Header-based         SF1 ↑ → BC/CS ↑ ?
-  2B base          Semantic
-  2B LoRA          Fixed-size
-  30B teacher
+Step 1: Does better structure produce better chunks?
+  WigtnOCR (structured) vs PaddleOCR (unstructured)
+  → 3 chunking strategies → BC/CS (perplexity-based, MoC)
 
-Step 2: Do better chunks make better retrieval?
-┌──────────┐     ┌──────────────┐     ┌──────────────┐
-│ Best     │ ──► │ Embed + FAISS│ ──► │ Hit@K, MRR,  │
-│ chunks   │     │ (controlled) │     │ nDCG         │
-└──────────┘     └──────────────┘     └──────────────┘
-                   BGE-M3               BC/CS ↑ → Hit@K ↑ ?
+Step 2: Do better chunks produce better retrieval?
+  Best chunks → BGE-M3 embedding → FAISS → Hit@K, MRR, nDCG
 ```
 
 ---
@@ -119,77 +105,85 @@ GT generated by Qwen3-VL-30B, validated by Qwen3.5-122B (text-only judge, 5-dime
 # Install
 pip install -e ".[all]"
 
-# 1. Generate pseudo ground truth (requires 30B VLM serving)
-python scripts/generate_pseudo_gt.py --dataset documents --batch-size 4
+# 1. Generate pseudo ground truth
+python scripts/training/generate_pseudo_gt.py --dataset documents --batch-size 4
 
-# 2. Validate GT quality (requires 122B LLM serving)
-python scripts/validate_gt.py --dataset documents --sample-ratio 0.3
+# 2. Validate GT quality
+python scripts/training/validate_gt.py --dataset documents --sample-ratio 0.3
 
 # 3. Prepare training data
-python scripts/prepare_training_data.py --min-score 3 --max-doc-ratio 0.25
+python scripts/training/prepare_training_data.py --min-score 3 --max-doc-ratio 0.25
 
 # 4. LoRA fine-tuning
 python -m training.lora_trainer --config configs/training.yaml
 
-# 5. Evaluate
-python -m evaluation.cli parse --all        # Parsing metrics
-python -m evaluation.cli chunk --all        # Chunking quality (Step 1)
-python -m evaluation.cli retrieval --all    # Retrieval performance (Step 2)
+# 5. OmniDocBench evaluation
+python scripts/eval_omnidocbench/run_inference.py --model wigtnocr-2b-v1 --output-dir results/omnidocbench/v1
+python scripts/eval_omnidocbench/run_eval.py --pred-dir results/omnidocbench/v1
+
+# 6. KoGovDoc evaluation
+python scripts/eval_kogovdoc/run_val_eval.py --model wigtnocr-2b-v1 --output-dir results/kogovdoc/v1_val
+python scripts/eval_kogovdoc/run_paddleocr_baseline.py --output-dir results/kogovdoc/paddleocr_val
+python scripts/eval_kogovdoc/run_bccs_eval.py --ppl-model qwen2.5-1.5b-instruct
 ```
 
 ---
 
 ## Model Configurations
 
-| Role | Model | Params | GPU | Purpose |
-|------|-------|--------|-----|---------|
-| Teacher | Qwen3-VL-30B-A3B-Thinking | 30B (MoE) | 2x RTX PRO 6000, TP=2 | Pseudo GT generation |
-| Judge | Qwen3.5-122B-A10B-NVFP4 | 122B (MoE) | 2x RTX PRO 6000, TP=2 | GT quality validation |
-| Student | Qwen3-VL-2B-Instruct + LoRA | 2B + LoRA r=8 | 2x RTX PRO 6000, ZeRO-2 | Production model |
+| Role | Model | Purpose |
+|------|-------|---------|
+| Teacher | Qwen3-VL-30B-A3B-Instruct (FP8) | Pseudo GT generation |
+| Judge | Qwen3.5-122B-A10B-NVFP4 | GT quality validation (text-only) |
+| Student | Qwen3-VL-2B-Instruct + LoRA r=8 | **Production model (WigtnOCR-2B)** |
+| BC/CS PPL | Qwen2.5-1.5B-Instruct | Perplexity for MoC metrics |
+| Embedding | BAAI/bge-m3 (Infinity) | Semantic chunking + retrieval |
 
-All models served via vLLM v0.13.0. GPU pair shared sequentially (not concurrent).
+All VLMs served via vLLM v0.13.0 on dual RTX PRO 6000 (98GB each), TP=2.
 
 ---
 
 ## Evaluation Metrics
 
-| Stage | Metric | Purpose |
-|-------|--------|---------|
-| **Prerequisite** | CER, WER | Text extraction quality check |
-| **Parsing** | Structure F1, TEDS | Structural element preservation |
-| **Chunking (Step 1)** | BC, CS | Chunk boundary and coherence quality |
-| **Retrieval (Step 2)** | Hit@K, MRR, nDCG | Search performance |
-| **Efficiency** | Latency, VRAM | Production viability |
+| Benchmark | Metric | Method | Purpose |
+|-----------|--------|--------|---------|
+| OmniDocBench | Text NED | Edit distance | Text recognition quality |
+| OmniDocBench | Table TEDS | Tree edit distance | Table structure accuracy |
+| OmniDocBench | Formula CDM | Visual char matching | Formula recognition |
+| OmniDocBench | Reading Order NED | Sequence NED | Layout understanding |
+| KoGovDoc | BC | ppl(q\|d) / ppl(q) | Chunk boundary independence |
+| KoGovDoc | CS | Structural entropy | Chunk stickiness (lower=better) |
+| KoGovDoc | Hit@K, MRR, nDCG | FAISS retrieval | Search performance |
+
+BC/CS follow the MoC framework (Zhao et al., ACL 2025) using perplexity-based computation.
 
 ---
 
 ## Project Structure
 
 ```
-wigtnocr/                          # Core framework (pip install wigtnocr)
+wigtnocr/                          # Core library
     parsers/                       # PyMuPDF, RapidOCR, VLM structurer
-    pipeline/                      # Two-stage, hybrid routing
     chunking/                      # Chunker, embeddings, BC/CS metrics
+    pipeline/                      # Two-stage, hybrid routing
+    utils/                         # Markdown utilities
 
 training/                          # Pseudo-labeling + LoRA pipeline
     gt_generator.py                # 30B teacher → markdown GT
     gt_validator.py                # 122B judge → quality scores
     data_prep.py                   # Quality filtering, bias correction
     lora_trainer.py                # ms-swift LoRA fine-tuning
-    prompts/templates.py           # Ko/En prompt templates
 
-evaluation/                        # Two-step evaluation suite
-    metrics/                       # CER, Structure F1, TEDS, BC/CS
-    runners/
-        parser_eval.py             # Parsing quality evaluation
-        chunking_eval.py           # Step 1: chunking quality
-        retrieval_eval.py          # Step 2: retrieval performance
-    benchmarks/                    # OmniDocBench adapter
+evaluation/                        # Evaluation framework
+    metrics/                       # NED, TEDS, CER, BC/CS (perplexity), retrieval
+    omnidocbench/                  # OmniDocBench evaluator
+    benchmarks/                    # Benchmark adapters
+    runners/                       # Evaluation runners
 
-configs/                           # YAML configurations
-datasets/                          # KoGovDoc + ArXivPapers + OmniDocBench
-scripts/                           # CLI tools
-docs/paper/                        # Paper manuscript
+scripts/
+    training/                      # GT generation, validation, data prep
+    eval_omnidocbench/             # OmniDocBench inference + evaluation
+    eval_kogovdoc/                 # KoGovDoc val eval + BC/CS + retrieval
 ```
 
 ---
@@ -198,10 +192,11 @@ docs/paper/                        # Paper manuscript
 
 - [Qwen3-VL](https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct) — Base VLM family
 - [ms-swift](https://github.com/modelscope/ms-swift) — Official Qwen fine-tuning framework
-- [MoC](https://arxiv.org/abs/2503.09600) — BC/CS chunk quality metrics
-- [OmniDocBench](https://github.com/opendatalab/OmniDocBench) — Document parsing benchmark
+- [MoC](https://arxiv.org/abs/2503.09600) — BC/CS chunk quality metrics (ACL 2025)
+- [OmniDocBench](https://github.com/opendatalab/OmniDocBench) — Document parsing benchmark (CVPR 2025)
 - [vLLM](https://github.com/vllm-project/vllm) — VLM serving engine
 - [BGE-M3](https://huggingface.co/BAAI/bge-m3) — Multilingual embedding model
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) — OCR baseline (via RapidOCR)
 
 ---
 
@@ -216,6 +211,6 @@ MIT License
   title   = {WigtnOCR: Pseudo-Label Distillation for Structure-Preserving Document Parsing},
   author  = {Kim, Hyeongseob},
   year    = {2026},
-  url     = {https://github.com/Hyeongseob91/wigtnocr}
+  url     = {https://github.com/Hyeongseob91/research-vlm-based-document-parsing}
 }
 ```
