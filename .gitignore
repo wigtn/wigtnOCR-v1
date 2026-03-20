@@ -69,3 +69,9 @@ docs/reference/
 datasets
 output/
 
+# Training code (private — not included in OSS release)
+training/
+scripts/training/
+configs/training.yaml
+docs/e2e_post_training_guide.md
+
