@@ -61,7 +61,7 @@ WigtnOCR은 Qwen3-VL-30B(teacher)의 문서 파싱 능력을 품질 필터링된
 ### BC/CS — 청크 품질 ≠ 검색 품질
 
 <div align="center">
-<img src="docs/figures/fig3_bc_vs_retrieval.png" width="55%" alt="BC vs 검색 성능">
+<img src="docs/figures/fig3_bc_vs_retrieval.png" width="100%" alt="BC vs 검색 성능">
 </div>
 
 | 모델 | BC ↑ | CS ↓ |

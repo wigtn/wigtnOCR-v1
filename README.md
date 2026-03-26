@@ -61,7 +61,7 @@ WigtnOCR distills document parsing capabilities from Qwen3-VL-30B (teacher) into
 ### BC/CS — Chunk Quality Does Not Equal Search Quality
 
 <div align="center">
-<img src="docs/figures/fig3_bc_vs_retrieval.png" width="55%" alt="BC vs Retrieval">
+<img src="docs/figures/fig3_bc_vs_retrieval.png" width="100%" alt="BC vs Retrieval">
 </div>
 
 | Model | BC ↑ | CS ↓ |
