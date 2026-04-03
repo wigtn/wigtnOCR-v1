@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - name: "WIGTN Crew"
+    website: "https://wigtn.com"
+repository-code: "https://github.com/wigtn/wigtnOCR-v1"
+url: "https://wigtn.com"
+abstract: "WigtnOCR — Pseudo-Label Distillation for Structure-Preserving Document Parsing. Distills document parsing capabilities from Qwen3-VL-30B into Qwen3-VL-2B via quality-filtered pseudo-labeling and LoRA fine-tuning. Achieves highest retrieval on Korean government documents."
+keywords:
+  - ai-native
+  - wigtn
+  - korea
+  - document-parsing
+  - ocr
+  - vlm
+  - lora
+  - pseudo-labeling
+license: Apache-2.0
