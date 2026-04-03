@@ -323,8 +323,8 @@ We build practical, domain-specialized AI tools. Fast prototyping, strong engine
 
 | Project | Description | Status |
 |---------|-------------|--------|
-| [WigtnOCR](https://huggingface.co/Wigtn/Qwen3-VL-2B-WigtnOCR) | VLM-based Korean government document parser | EMNLP 2026 |
-| [WIGVO](https://wigtn.com) | Real-time PSTN voice translation (Korean↔English) | ACL 2026 |
+| [WigtnOCR](https://huggingface.co/Wigtn/Qwen3-VL-2B-WigtnOCR) | VLM-based Korean government document parser | Research |
+| [WIGVO](https://wigtn.com) | Real-time PSTN voice translation (Korean↔English) | Research |
 | [Claude Code Plugin](https://github.com/wigtn/wigtn-plugins-with-claude-code) | Multi-agent parallel execution ecosystem | Open Source |
 
 > Results speak louder than résumés.
