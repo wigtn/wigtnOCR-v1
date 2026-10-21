@@ -6,7 +6,7 @@ authors:
     website: "https://wigtn.com"
 repository-code: "https://github.com/wigtn/wigtnOCR-v1"
 url: "https://wigtn.com"
-abstract: "WigtnOCR — Pseudo-Label Distillation for Structure-Preserving Document Parsing. Distills document parsing capabilities from Qwen3-VL-30B into Qwen3-VL-2B via quality-filtered pseudo-labeling and LoRA fine-tuning. Achieves highest retrieval on Korean government documents."
+abstract: "WigtnOCR: Pseudo-Label Distillation for Structure-Preserving Document Parsing. Distills document parsing from Qwen3-VL-30B into Qwen3-VL-2B via judge-filtered pseudo-labels and LoRA fine-tuning. Follow-up: RCPS, EMNLP 2026 Industry Track (github.com/wigtn/WigtnOCR-RADP)."
 keywords:
   - ai-native
   - wigtn
