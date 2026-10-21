@@ -4,7 +4,6 @@
 
 <br>
 
-[![EMNLP 2026](https://img.shields.io/badge/EMNLP_2026-Industry_Track_·_RCPS-4F46E5?style=flat-square)](#소식)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](requirements.txt)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue?style=flat-square)](LICENSE)
 [![Model](https://img.shields.io/badge/%F0%9F%A4%97_Model-WigtnOCR--2B-yellow?style=flat-square)](https://huggingface.co/Wigtn/Qwen3-VL-2B-WigtnOCR)
@@ -38,19 +37,16 @@ WigtnOCR은 judge가 걸러 낸 pseudo-label과 LoRA fine-tuning으로 Qwen3-VL-
 ## Qwen 기반
 
 <div align="center">
-<a href="https://github.com/QwenLM/Qwen3-VL"><img src="https://qianwen-res.oss-accelerate.aliyuncs.com/Qwen3-VL/qwen3vllogo.png" width="360" alt="Qwen3-VL"></a>
+<a href="https://github.com/QwenLM/Qwen3-VL"><img src="docs/assets/qwen3vl-head.png" width="100%" alt="Qwen3-VL"></a>
+<br>
+<sub>배너 출처: <a href="https://qwen.ai/blog?id=qwen3-vl">Qwen3-VL 발표 글</a></sub>
 </div>
 
 학습 파이프라인의 모든 모델은 공개된 Qwen 모델입니다. WigtnOCR은 WIGTN의 독립 프로젝트이며 Qwen 공식 릴리스가 아닙니다.
 
-```mermaid
-flowchart TB
-    A["PDF 페이지<br/>200 DPI, 4,501 페이지"] --> B["Teacher<br/>Qwen3-VL-30B-A3B-Thinking<br/>페이지 이미지를 Markdown으로"]
-    B --> C["Judge<br/>Qwen3.5-122B-A10B<br/>텍스트만, 5개 차원, 점수 1-5"]
-    C -->|"점수 3 이상<br/>문서별 상한 25%"| D["학습 데이터<br/>train 2,667 / val 294 페이지"]
-    D --> E["Student<br/>Qwen3-VL-2B-Instruct + LoRA<br/>r=8, alpha=32, 3 epoch"]
-    E --> F["WigtnOCR-2B<br/>checkpoint-600, 병합"]
-```
+<p align="center">
+<img src="docs/assets/training-pipeline.ko.svg" width="100%" alt="WigtnOCR 학습 파이프라인: PDF 4,501 페이지, teacher Qwen3-VL-30B-A3B-Thinking, judge Qwen3.5-122B-A10B, train 2,667 / val 294 페이지, student Qwen3-VL-2B-Instruct + LoRA, 결과 WigtnOCR-2B">
+</p>
 
 | 역할 | 모델 | 사용 방식 |
 |---|---|---|

@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="400" viewBox="0 0 1020 400" role="img" aria-label="WigtnOCR 학습 파이프라인: teacher, judge, student 모두 Qwen 모델" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif">
+<title>WigtnOCR 학습 파이프라인: teacher, judge, student 모두 Qwen 모델</title>
+<style>
+.bg{fill:#FAF9FD;stroke:#E6E3F0}
+.card{fill:#FFFFFF;stroke:#DCD7EA}
+.data{fill:#F3F1F9;stroke:#CFC8E4;stroke-dasharray:5 4}
+.result{fill:#3F2E73;stroke:#3F2E73}
+.tag{fill:#ECE8FB}
+.tagt{fill:#4B3FA8}
+.name{fill:#1E1A2B}
+.sub{fill:#4A445E}
+.muted{fill:#6A6480}
+.rule{stroke:#ECE9F4}
+.lbl{fill:#7A70A8}
+.rlbl{fill:#CFC6F0}
+.rname{fill:#FFFFFF}
+.rsub{fill:#DDD6F7}
+.arrow{stroke:#9A92B8;fill:none}
+.ah{fill:#9A92B8}
+@media (prefers-color-scheme: dark){
+.bg{fill:#0F1117;stroke:#2A2F3A}
+.card{fill:#161A22;stroke:#343A48}
+.data{fill:#12151C;stroke:#3D4454}
+.result{fill:#5B4BC4;stroke:#5B4BC4}
+.tag{fill:#2A2450}
+.tagt{fill:#C3B9FF}
+.name{fill:#ECEAF4}
+.sub{fill:#C9C5D8}
+.muted{fill:#A09BB5}
+.rule{stroke:#262B36}
+.lbl{fill:#A99FE0}
+.rlbl{fill:#E2DCFF}
+.rsub{fill:#EDE9FF}
+.arrow{stroke:#6E6890}
+.ah{fill:#6E6890}
+}
+</style>
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path class="ah" d="M0,1 L10,5 L0,9 z"/></marker></defs>
+<rect class="bg" x="0.5" y="0.5" width="1019" height="399" rx="18"/>
+<path class="arrow" stroke-width="2" d="M141.5,270.0 C141.5,229.8 197.0,237.2 197.0,197.0" marker-end="url(#ah)"/>
+<path class="arrow" stroke-width="2" d="M305.0,196.0 C305.0,236.2 360.5,228.8 360.5,269.0" marker-end="url(#ah)"/>
+<path class="arrow" stroke-width="2" d="M400.5,270.0 C400.5,229.8 456.0,237.2 456.0,197.0" marker-end="url(#ah)"/>
+<path class="arrow" stroke-width="2" d="M564.0,196.0 C564.0,236.2 619.5,228.8 619.5,269.0" marker-end="url(#ah)"/>
+<path class="arrow" stroke-width="2" d="M659.5,270.0 C659.5,229.8 715.0,237.2 715.0,197.0" marker-end="url(#ah)"/>
+<path class="arrow" stroke-width="2" d="M823.0,196.0 C823.0,236.2 878.5,228.8 878.5,269.0" marker-end="url(#ah)"/>
+<rect class="card" x="133.0" y="24" width="236" height="172" rx="14" stroke-width="1.2"/>
+<rect class="tag" x="153.0" y="44" width="87.0" height="24" rx="12"/>
+<text x="165.0" y="60.5" class="tagt" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.2">TEACHER</text>
+<text x="153.0" y="104.0" class="name" font-size="18" font-weight="700" text-anchor="start">Qwen3-VL-30B-A3B</text>
+<text x="153.0" y="126.0" class="sub" font-size="14" font-weight="500" text-anchor="start">Thinking</text>
+<line class="rule" x1="153.0" y1="143" x2="349.0" y2="143" stroke-width="1"/>
+<text x="153.0" y="166.0" class="muted" font-size="13" font-weight="400" text-anchor="start">페이지 이미지를 읽고</text>
+<text x="153.0" y="185.0" class="muted" font-size="13" font-weight="400" text-anchor="start">Markdown을 작성</text>
+<rect class="card" x="392.0" y="24" width="236" height="172" rx="14" stroke-width="1.2"/>
+<rect class="tag" x="412.0" y="44" width="69.0" height="24" rx="12"/>
+<text x="424.0" y="60.5" class="tagt" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.2">JUDGE</text>
+<text x="412.0" y="104.0" class="name" font-size="18" font-weight="700" text-anchor="start">Qwen3.5-122B-A10B</text>
+<text x="412.0" y="126.0" class="sub" font-size="14" font-weight="500" text-anchor="start">NVFP4 빌드</text>
+<line class="rule" x1="412.0" y1="143" x2="608.0" y2="143" stroke-width="1"/>
+<text x="412.0" y="166.0" class="muted" font-size="13" font-weight="400" text-anchor="start">5개 차원, 점수 1–5</text>
+<text x="412.0" y="185.0" class="muted" font-size="13" font-weight="400" text-anchor="start">3점 미만 페이지 제외</text>
+<rect class="card" x="651.0" y="24" width="236" height="172" rx="14" stroke-width="1.2"/>
+<rect class="tag" x="671.0" y="44" width="87.0" height="24" rx="12"/>
+<text x="683.0" y="60.5" class="tagt" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.2">STUDENT</text>
+<text x="671.0" y="104.0" class="name" font-size="18" font-weight="700" text-anchor="start">Qwen3-VL-2B</text>
+<text x="671.0" y="126.0" class="sub" font-size="14" font-weight="500" text-anchor="start">Instruct</text>
+<line class="rule" x1="671.0" y1="143" x2="867.0" y2="143" stroke-width="1"/>
+<text x="671.0" y="166.0" class="muted" font-size="13" font-weight="400" text-anchor="start">LoRA r = 8, α = 32, 3 epoch</text>
+<text x="671.0" y="185.0" class="muted" font-size="13" font-weight="400" text-anchor="start">비전 인코더 고정</text>
+<rect class="data" x="20" y="270" width="203" height="106" rx="14" stroke-width="1.2"/>
+<text x="38.0" y="297.0" class="lbl" font-size="12" font-weight="700" text-anchor="start">입력</text>
+<text x="38.0" y="323.0" class="name" font-size="17" font-weight="700" text-anchor="start">PDF 4,501 페이지</text>
+<text x="38.0" y="345.0" class="muted" font-size="12.5" font-weight="400" text-anchor="start">200 DPI 이미지</text>
+<rect class="data" x="279" y="270" width="203" height="106" rx="14" stroke-width="1.2"/>
+<text x="297.0" y="297.0" class="lbl" font-size="11" font-weight="700" text-anchor="start" letter-spacing="1.2">PSEUDO-LABEL</text>
+<text x="297.0" y="323.0" class="name" font-size="17" font-weight="700" text-anchor="start">Markdown 라벨</text>
+<text x="297.0" y="345.0" class="muted" font-size="12.5" font-weight="400" text-anchor="start">페이지마다 하나</text>
+<rect class="data" x="538" y="270" width="203" height="106" rx="14" stroke-width="1.2"/>
+<text x="556.0" y="297.0" class="lbl" font-size="12" font-weight="700" text-anchor="start">학습 데이터</text>
+<text x="556.0" y="323.0" class="name" font-size="17" font-weight="700" text-anchor="start">2,667 / 294</text>
+<text x="556.0" y="345.0" class="muted" font-size="12.5" font-weight="400" text-anchor="start">train / val 페이지</text>
+<text x="556.0" y="363.0" class="muted" font-size="12.5" font-weight="400" text-anchor="start">문서별 상한 25%</text>
+<rect class="result" x="797" y="270" width="203" height="106" rx="14" stroke-width="1.2"/>
+<text x="815.0" y="297.0" class="rlbl" font-size="12" font-weight="700" text-anchor="start">결과</text>
+<text x="815.0" y="323.0" class="rname" font-size="17" font-weight="700" text-anchor="start">WigtnOCR-2B</text>
+<text x="815.0" y="345.0" class="rsub" font-size="12.5" font-weight="400" text-anchor="start">checkpoint-600, 병합</text>
+</svg>

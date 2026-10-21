@@ -4,7 +4,6 @@
 
 <br>
 
-[![EMNLP 2026](https://img.shields.io/badge/EMNLP_2026-Industry_Track_·_RCPS-4F46E5?style=flat-square)](#动态)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](requirements.txt)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue?style=flat-square)](LICENSE)
 [![Model](https://img.shields.io/badge/%F0%9F%A4%97_Model-WigtnOCR--2B-yellow?style=flat-square)](https://huggingface.co/Wigtn/Qwen3-VL-2B-WigtnOCR)
@@ -38,19 +37,16 @@ WigtnOCR 使用经评判模型筛选的伪标签和 LoRA 微调，将文档解�
 ## 基于 Qwen 构建
 
 <div align="center">
-<a href="https://github.com/QwenLM/Qwen3-VL"><img src="https://qianwen-res.oss-accelerate.aliyuncs.com/Qwen3-VL/qwen3vllogo.png" width="360" alt="Qwen3-VL"></a>
+<a href="https://github.com/QwenLM/Qwen3-VL"><img src="docs/assets/qwen3vl-head.png" width="100%" alt="Qwen3-VL"></a>
+<br>
+<sub>横幅来自 <a href="https://qwen.ai/blog?id=qwen3-vl">Qwen3-VL 发布博客</a></sub>
 </div>
 
 训练流程中的每个模型都是公开发布的 Qwen 模型。WigtnOCR 是 WIGTN 的独立项目，并非 Qwen 官方发布。
 
-```mermaid
-flowchart TB
-    A["PDF 页面<br/>4,501 页，200 DPI"] --> B["教师模型<br/>Qwen3-VL-30B-A3B-Thinking<br/>页面图像转 Markdown"]
-    B --> C["评判模型<br/>Qwen3.5-122B-A10B<br/>仅文本，5 个维度，评分 1-5"]
-    C -->|"评分 3 及以上<br/>每文档上限 25%"| D["训练数据<br/>2,667 训练页 / 294 验证页"]
-    D --> E["学生模型<br/>Qwen3-VL-2B-Instruct + LoRA<br/>r=8, alpha=32, 3 个 epoch"]
-    E --> F["WigtnOCR-2B<br/>checkpoint-600，已合并"]
-```
+<p align="center">
+<img src="docs/assets/training-pipeline.cn.svg" width="100%" alt="WigtnOCR 训练流程：4,501 页 PDF，教师模型 Qwen3-VL-30B-A3B-Thinking，评判模型 Qwen3.5-122B-A10B，2,667 训练页 / 294 验证页，学生模型 Qwen3-VL-2B-Instruct + LoRA，结果 WigtnOCR-2B">
+</p>
 
 | 角色 | 模型 | 用途 |
 |---|---|---|
