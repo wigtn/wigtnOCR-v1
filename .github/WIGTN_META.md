@@ -1,6 +1,6 @@
 # Repository Metadata for GitHub About Section
 
-description: "VLM-based Korean document parser with pseudo-label distillation | Built by WIGTN Crew (wigtn.com)"
+description: "Qwen3-VL-30B → 2B distillation for document parsing; the production parser in RCPS (EMNLP 2026)."
 website: "https://wigtn.com"
 topics:
   - wigtn
