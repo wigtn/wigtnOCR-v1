@@ -1,0 +1,4 @@
+# Serving environment for scripts/serve_*.sh (keep it separate from training).
+# The v1 run served the teacher and the student with vLLM 0.13.0.
+# The judge (Qwen3.5-122B-A10B, NVFP4) was served with a nightly vLLM build instead.
+vllm==0.13.0

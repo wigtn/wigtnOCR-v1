@@ -62,13 +62,12 @@ output/
 # Datasets
 datasets/
 
-# Source code (private — not included in public release)
+# Not released yet: the wigtnocr inference library and its packaging
 wigtnocr/
-evaluation/
-training/
-scripts/
-configs/
 pyproject.toml
+
+# Third-party checkouts made by scripts/04-05 (OmniDocBench, WigtnOCR-RADP)
+/third_party/
 
 # Docs (private)
 docs/references/

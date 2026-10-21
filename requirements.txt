@@ -1,0 +1,15 @@
+# Pipeline and training environment: pseudo-labels, judge filtering, data preparation,
+# LoRA fine-tuning (training/, scripts/training/, scripts/01-03).
+# Versions are the ones recorded for the v1 run (2026-03-16, Python 3.13, CUDA 12.8).
+
+PyMuPDF
+httpx
+PyYAML
+huggingface_hub
+
+ms-swift==4.0.1
+torch==2.9.1
+transformers==4.57.3
+peft==0.18.1
+qwen_vl_utils>=0.0.14   # required by ms-swift for Qwen3-VL
+deepspeed               # ZeRO-2; the version used in the v1 run was not recorded

@@ -1,0 +1,51 @@
+# WigtnOCR-2B (v1) LoRA fine-tuning with ms-swift.
+#
+# Every value below is taken from the args.json of the v1 run
+# (output/wigtnocr-2b-lora/v1-20260316-155711, ms-swift 4.0.1).
+# The released model Wigtn/Qwen3-VL-2B-WigtnOCR is checkpoint-600 of that run
+# (lowest eval loss, epoch ~1.8), merged with `swift export --merge_lora true`.
+#
+# Usage:
+#   python -m training.lora_trainer --config configs/lora_qwen3vl2b_v1.yaml
+#   python -m training.lora_trainer --config configs/lora_qwen3vl2b_v1.yaml --dry-run
+
+model:
+  base: "Qwen/Qwen3-VL-2B-Instruct"
+  revision: "89644892e4d85e24eaac8bacfd4f463576704203"  # Hugging Face snapshot used in the run
+  use_hf: true            # the run loaded this snapshot from a local Hugging Face cache
+  output: "output/wigtnocr-2b-lora"
+
+lora:
+  r: 8
+  alpha: 32
+  dropout: 0.05
+  target_modules: "all-linear"   # resolves to q/k/v/o/gate/up/down_proj of the language model
+  freeze_vit: true               # vision encoder frozen
+  freeze_aligner: true           # vision-language merger frozen
+
+training:
+  num_epochs: 3
+  learning_rate: 1.0e-4
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.05
+  weight_decay: 0.1
+  batch_size: 1                  # per device
+  gradient_accumulation_steps: 4 # effective batch 8 on 2 GPUs
+  max_seq_length: 4096           # longer samples are dropped (ms-swift truncation_strategy=delete)
+  seed: 42
+  data_seed: 42
+  eval_steps: 100
+  save_steps: 100
+  save_total_limit: 3
+  logging_steps: 5
+
+data:
+  train: "datasets/training/train.jsonl"   # 2,667 samples in the v1 run
+  val: "datasets/training/val.jsonl"       # 294 samples = Wigtn/KoGovDoc-Bench val.jsonl
+
+hardware:
+  nproc_per_node: 2
+  cuda_visible_devices: "0,1"
+  deepspeed: "zero2"
+  bf16: true
+  image_max_token_num: 1024      # IMAGE_MAX_TOKEN_NUM, caps visual tokens per page image
