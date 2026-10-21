@@ -434,9 +434,12 @@ Apache License 2.0
 
 ---
 
-## 🏢 About WIGTN Crew
+## 🏢 关于 WIGTN
 
-本项目由 **[WIGTN Crew](https://wigtn.com)** 构建和维护，这是一个位于韩国的 AI 原生开源研究团队。我们开发实用的、面向特定领域的 AI 工具。快速做原型，扎实做工程，交付真实可用的产品。
+本项目由 **[WIGTN](https://wigtn.com)** 构建和维护。WIGTN 是一家由三个团队组成的韩国 AI 公司。
+Solutions 为企业推进 AI 转型（AX），从咨询一直做到实际运行的系统。
+Product 发布我们自己开发、自己在用的开源工具。
+Research 发表经过同行评审的 LLM、LLM 评估与语音研究。
 
 | | |
 |---|---|

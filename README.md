@@ -439,11 +439,12 @@ Apache License 2.0
 
 ---
 
-## 🏢 About WIGTN Crew
+## 🏢 About WIGTN
 
-This project is built and maintained by **[WIGTN Crew](https://wigtn.com)**,
-an AI-native open-source research crew based in Korea.
-We build practical, domain-specialized AI tools. Fast prototyping, strong engineering, shipping real things.
+This project is built and maintained by **[WIGTN](https://wigtn.com)**, an AI company in Korea with three teams.
+Solutions takes AI transformation (AX) for enterprises from consulting to the systems that run it.
+Product ships the open-source tools we build and use ourselves.
+Research publishes peer-reviewed work on LLMs, their evaluation, and speech.
 
 | | |
 |---|---|

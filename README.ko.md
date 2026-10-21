@@ -439,11 +439,12 @@ Apache License 2.0
 
 ---
 
-## 🏢 WIGTN Crew 소개
+## 🏢 WIGTN 소개
 
-이 프로젝트는 한국에 기반을 둔 AI-native 오픈소스 연구 크루인
-<strong>[WIGTN Crew](https://wigtn.com)</strong>가 만들고 관리합니다.
-우리는 실용적이고 도메인에 특화된 AI 도구를 만듭니다. 빠른 프로토타이핑, 탄탄한 엔지니어링, 실제로 동작하는 결과물을 내놓습니다.
+이 프로젝트는 <strong>[WIGTN](https://wigtn.com)</strong>이 만들고 관리합니다. WIGTN은 세 팀으로 일하는 한국의 AI 회사입니다.
+Solutions는 기업의 AI 전환(AX)을 컨설팅부터 실제로 돌아가는 시스템까지 맡습니다.
+Product는 우리가 만들어 직접 쓰는 오픈소스 도구를 내놓습니다.
+Research는 LLM과 그 평가, 음성에 관한 연구를 학회 심사를 거쳐 발표합니다.
 
 | | |
 |---|---|
