@@ -4,7 +4,6 @@
 
 <br>
 
-[![EMNLP 2026](https://img.shields.io/badge/EMNLP_2026-Industry_Track_·_RCPS-4F46E5?style=flat-square)](#news)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](requirements.txt)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue?style=flat-square)](LICENSE)
 [![Model](https://img.shields.io/badge/%F0%9F%A4%97_Model-WigtnOCR--2B-yellow?style=flat-square)](https://huggingface.co/Wigtn/Qwen3-VL-2B-WigtnOCR)
@@ -38,19 +37,16 @@ WigtnOCR distills document parsing from Qwen3-VL-30B (teacher) into Qwen3-VL-2B 
 ## Built on Qwen
 
 <div align="center">
-<a href="https://github.com/QwenLM/Qwen3-VL"><img src="https://qianwen-res.oss-accelerate.aliyuncs.com/Qwen3-VL/qwen3vllogo.png" width="360" alt="Qwen3-VL"></a>
+<a href="https://github.com/QwenLM/Qwen3-VL"><img src="docs/assets/qwen3vl-head.png" width="100%" alt="Qwen3-VL"></a>
+<br>
+<sub>Banner from the <a href="https://qwen.ai/blog?id=qwen3-vl">Qwen3-VL announcement</a>.</sub>
 </div>
 
 Every model in the training pipeline is an openly released Qwen model. WigtnOCR is an independent project by WIGTN; it is not an official Qwen release.
 
-```mermaid
-flowchart TB
-    A["PDF pages<br/>4,501 pages at 200 DPI"] --> B["Teacher<br/>Qwen3-VL-30B-A3B-Thinking<br/>page image to Markdown"]
-    B --> C["Judge<br/>Qwen3.5-122B-A10B<br/>text only, 5 dimensions, score 1-5"]
-    C -->|"score 3 or higher<br/>per-document cap 25%"| D["Training data<br/>2,667 train / 294 val pages"]
-    D --> E["Student<br/>Qwen3-VL-2B-Instruct + LoRA<br/>r=8, alpha=32, 3 epochs"]
-    E --> F["WigtnOCR-2B<br/>checkpoint-600, merged"]
-```
+<p align="center">
+<img src="docs/assets/training-pipeline.svg" width="100%" alt="WigtnOCR training pipeline: 4,501 PDF pages, teacher Qwen3-VL-30B-A3B-Thinking, judge Qwen3.5-122B-A10B, 2,667 train and 294 val pages, student Qwen3-VL-2B-Instruct with LoRA, result WigtnOCR-2B">
+</p>
 
 | Role | Model | How it is used |
 |---|---|---|
