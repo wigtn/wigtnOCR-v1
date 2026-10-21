@@ -37,6 +37,10 @@ WigtnOCR 使用经评判模型筛选的伪标签和 LoRA 微调，将文档解�
 
 ## 基于 Qwen 构建
 
+<div align="center">
+<a href="https://github.com/QwenLM/Qwen3-VL"><img src="https://qianwen-res.oss-accelerate.aliyuncs.com/Qwen3-VL/qwen3vllogo.png" width="360" alt="Qwen3-VL"></a>
+</div>
+
 训练流程中的每个模型都是公开发布的 Qwen 模型。WigtnOCR 是 WIGTN 的独立项目，并非 Qwen 官方发布。
 
 ```mermaid

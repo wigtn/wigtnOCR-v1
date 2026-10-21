@@ -37,6 +37,10 @@ WigtnOCR은 judge가 걸러 낸 pseudo-label과 LoRA fine-tuning으로 Qwen3-VL-
 
 ## Qwen 기반
 
+<div align="center">
+<a href="https://github.com/QwenLM/Qwen3-VL"><img src="https://qianwen-res.oss-accelerate.aliyuncs.com/Qwen3-VL/qwen3vllogo.png" width="360" alt="Qwen3-VL"></a>
+</div>
+
 학습 파이프라인의 모든 모델은 공개된 Qwen 모델입니다. WigtnOCR은 WIGTN의 독립 프로젝트이며 Qwen 공식 릴리스가 아닙니다.
 
 ```mermaid

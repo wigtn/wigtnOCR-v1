@@ -37,6 +37,10 @@ WigtnOCR distills document parsing from Qwen3-VL-30B (teacher) into Qwen3-VL-2B 
 
 ## Built on Qwen
 
+<div align="center">
+<a href="https://github.com/QwenLM/Qwen3-VL"><img src="https://qianwen-res.oss-accelerate.aliyuncs.com/Qwen3-VL/qwen3vllogo.png" width="360" alt="Qwen3-VL"></a>
+</div>
+
 Every model in the training pipeline is an openly released Qwen model. WigtnOCR is an independent project by WIGTN; it is not an official Qwen release.
 
 ```mermaid
