@@ -1,0 +1,22 @@
+# Evaluation environment: scripts/eval_omnidocbench/, scripts/eval_kogovdoc/, scripts/04-05.
+
+# v1 evaluation code (evaluation/, run_val_eval.py, run_eval.py, run_bccs_eval.py, run_retrieval_eval.py)
+httpx
+huggingface_hub
+numpy
+scipy
+jiwer
+python-Levenshtein
+apted
+lxml
+pylatexenc
+beautifulsoup4
+faiss-cpu
+sentence-transformers      # scripts/eval_kogovdoc/serve_bge_m3.py
+
+# RCPS protocol (scripts/eval_kogovdoc/run_rcps_eval.py), pinned to the commit these scripts were checked against
+wigtnocr-radp[eval] @ git+https://github.com/wigtn/WigtnOCR-RADP@67cf0e467d47b60ce36608900dde99756451c08e
+
+# Formula CDM has its own requirements: evaluation/metrics/cdm/requirements.txt
+# Baseline parsers (run_*_baseline.py, run_ocr_baseline.py) need their own packages: Marker, MinerU
+# (magic-pdf), RapidOCR and Docling. The Marker and MinerU baselines read the source PDFs, which are not distributed.
