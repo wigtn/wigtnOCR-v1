@@ -22,7 +22,7 @@
 ## 动态
 
 - **2026-10-25** · 以 WigtnOCR-2B 作为生产解析器的后续研究 RCPS 在 **EMNLP 2026 (Industry Track)** 上报告：线上报告，10 月 25 日（周日）12:30–14:00 CET，Virtual Session 1（[会议日程](https://2026.emnlp.org/program/)）。
-- **2026-08** · *Retrieval-Conditional Parsing Score (RCPS): Choosing Document Parsers by Retrieval, Not by Appearance* 被 **EMNLP 2026 Industry Track** 录用。通讯作者：Hyeong-seob Kim。[论文（camera-ready PDF）](https://github.com/wigtn/WigtnOCR-RADP/blob/main/output/pdf/EMNLP2026_Industry_384_camera_ready_final.pdf) · [代码](https://github.com/wigtn/WigtnOCR-RADP) · [适配器](https://github.com/wigtn/RCPS-RADP-Adapters)
+- **2026-08** · *Retrieval-Conditional Parsing Score (RCPS): Choosing Document Parsers by Retrieval, Not by Appearance* 被 **EMNLP 2026 Industry Track** 录用。通讯作者：Hyeong-seob Kim。[论文（ACL Anthology）](https://aclanthology.org/2026.emnlp-industry.90/) · [代码](https://github.com/wigtn/WigtnOCR-RADP) · [适配器](https://github.com/wigtn/RCPS-RADP-Adapters)
 - **2026-03** · [WigtnOCR-2B](https://huggingface.co/Wigtn/Qwen3-VL-2B-WigtnOCR) 和 [KoGovDoc-Bench](https://huggingface.co/datasets/Wigtn/KoGovDoc-Bench) 已在 Hugging Face 发布。
 
 > **同一条研究主线，分布在三个仓库中。**
@@ -424,11 +424,16 @@ Apache License 2.0
 }
 
 @inproceedings{son2026rcps,
-  title     = {Retrieval-Conditional Parsing Score (RCPS): Choosing Document Parsers by Retrieval, Not by Appearance},
+  title     = {Retrieval-Conditional Parsing Score ({RCPS}): Choosing Document Parsers by Retrieval, Not by Appearance},
   author    = {Son, Sang-Woo and Kim, Hyeong-seob and Kim, Hyeonsang and Cho, Hyun-woo and Kim, Jinmo},
-  booktitle = {Proceedings of EMNLP 2026 (Industry Track)},
+  editor    = {Atanasova, Pepa and Haffari, Gholamreza and Wang, Minghan},
+  booktitle = {Proceedings of the 2026 Conference on Empirical Methods in Natural Language Processing: Industry Track},
+  month     = oct,
   year      = {2026},
-  note      = {Accepted}
+  address   = {Budapest, Hungary},
+  publisher = {Association for Computational Linguistics},
+  pages     = {1531--1544},
+  url       = {https://aclanthology.org/2026.emnlp-industry.90/}
 }
 ```
 

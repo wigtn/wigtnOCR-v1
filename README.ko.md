@@ -22,7 +22,7 @@
 ## 소식
 
 - **2026-10-25** · WigtnOCR-2B를 production 파서로 쓰는 후속 연구 RCPS를 <strong>EMNLP 2026 (Industry Track)</strong>에서 발표합니다: 온라인 발표, 10월 25일 일요일, 12:30–14:00 CET, Virtual Session 1 ([프로그램](https://2026.emnlp.org/program/)).
-- **2026-08** · *Retrieval-Conditional Parsing Score (RCPS): Choosing Document Parsers by Retrieval, Not by Appearance* 논문이 **EMNLP 2026 Industry Track**에 채택되었습니다. 교신저자: Hyeong-seob Kim. [논문 (camera-ready PDF)](https://github.com/wigtn/WigtnOCR-RADP/blob/main/output/pdf/EMNLP2026_Industry_384_camera_ready_final.pdf) · [코드](https://github.com/wigtn/WigtnOCR-RADP) · [어댑터](https://github.com/wigtn/RCPS-RADP-Adapters)
+- **2026-08** · *Retrieval-Conditional Parsing Score (RCPS): Choosing Document Parsers by Retrieval, Not by Appearance* 논문이 **EMNLP 2026 Industry Track**에 채택되었습니다. 교신저자: Hyeong-seob Kim. [논문 (ACL Anthology)](https://aclanthology.org/2026.emnlp-industry.90/) · [코드](https://github.com/wigtn/WigtnOCR-RADP) · [어댑터](https://github.com/wigtn/RCPS-RADP-Adapters)
 - **2026-03** · [WigtnOCR-2B](https://huggingface.co/Wigtn/Qwen3-VL-2B-WigtnOCR)와 [KoGovDoc-Bench](https://huggingface.co/datasets/Wigtn/KoGovDoc-Bench)를 Hugging Face에 공개했습니다.
 
 > **한 가지 연구 흐름이 세 저장소에 나뉘어 있습니다.**
@@ -429,11 +429,16 @@ Apache License 2.0
 }
 
 @inproceedings{son2026rcps,
-  title     = {Retrieval-Conditional Parsing Score (RCPS): Choosing Document Parsers by Retrieval, Not by Appearance},
+  title     = {Retrieval-Conditional Parsing Score ({RCPS}): Choosing Document Parsers by Retrieval, Not by Appearance},
   author    = {Son, Sang-Woo and Kim, Hyeong-seob and Kim, Hyeonsang and Cho, Hyun-woo and Kim, Jinmo},
-  booktitle = {Proceedings of EMNLP 2026 (Industry Track)},
+  editor    = {Atanasova, Pepa and Haffari, Gholamreza and Wang, Minghan},
+  booktitle = {Proceedings of the 2026 Conference on Empirical Methods in Natural Language Processing: Industry Track},
+  month     = oct,
   year      = {2026},
-  note      = {Accepted}
+  address   = {Budapest, Hungary},
+  publisher = {Association for Computational Linguistics},
+  pages     = {1531--1544},
+  url       = {https://aclanthology.org/2026.emnlp-industry.90/}
 }
 ```
 
