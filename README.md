@@ -22,7 +22,7 @@
 ## News
 
 - **2026-10-25** · RCPS, the follow-up study that uses WigtnOCR-2B as its production parser, is presented at **EMNLP 2026 (Industry Track)**: virtual presentation, Sunday 25 October, 12:30–14:00 CET, Virtual Session 1 ([program](https://2026.emnlp.org/program/)).
-- **2026-08** · *Retrieval-Conditional Parsing Score (RCPS): Choosing Document Parsers by Retrieval, Not by Appearance* is accepted to the **EMNLP 2026 Industry Track**. Corresponding author: Hyeong-seob Kim. [Paper (camera-ready PDF)](https://github.com/wigtn/WigtnOCR-RADP/blob/main/output/pdf/EMNLP2026_Industry_384_camera_ready_final.pdf) · [Code](https://github.com/wigtn/WigtnOCR-RADP) · [Adapters](https://github.com/wigtn/RCPS-RADP-Adapters)
+- **2026-08** · *Retrieval-Conditional Parsing Score (RCPS): Choosing Document Parsers by Retrieval, Not by Appearance* is accepted to the **EMNLP 2026 Industry Track**. Corresponding author: Hyeong-seob Kim. [Paper (ACL Anthology)](https://aclanthology.org/2026.emnlp-industry.90/) · [Code](https://github.com/wigtn/WigtnOCR-RADP) · [Adapters](https://github.com/wigtn/RCPS-RADP-Adapters)
 - **2026-03** · [WigtnOCR-2B](https://huggingface.co/Wigtn/Qwen3-VL-2B-WigtnOCR) and [KoGovDoc-Bench](https://huggingface.co/datasets/Wigtn/KoGovDoc-Bench) are released on Hugging Face.
 
 > **One line of work in three repositories.**
@@ -429,11 +429,16 @@ Apache License 2.0
 }
 
 @inproceedings{son2026rcps,
-  title     = {Retrieval-Conditional Parsing Score (RCPS): Choosing Document Parsers by Retrieval, Not by Appearance},
+  title     = {Retrieval-Conditional Parsing Score ({RCPS}): Choosing Document Parsers by Retrieval, Not by Appearance},
   author    = {Son, Sang-Woo and Kim, Hyeong-seob and Kim, Hyeonsang and Cho, Hyun-woo and Kim, Jinmo},
-  booktitle = {Proceedings of EMNLP 2026 (Industry Track)},
+  editor    = {Atanasova, Pepa and Haffari, Gholamreza and Wang, Minghan},
+  booktitle = {Proceedings of the 2026 Conference on Empirical Methods in Natural Language Processing: Industry Track},
+  month     = oct,
   year      = {2026},
-  note      = {Accepted}
+  address   = {Budapest, Hungary},
+  publisher = {Association for Computational Linguistics},
+  pages     = {1531--1544},
+  url       = {https://aclanthology.org/2026.emnlp-industry.90/}
 }
 ```
 
